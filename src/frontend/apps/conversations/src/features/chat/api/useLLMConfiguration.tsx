@@ -40,6 +40,9 @@ export function useLLMConfiguration(
     {
       queryKey: [KEY_LLM_CONFIGURATION],
       queryFn: getLLMConfiguration,
+      staleTime: 0,
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: 'always',
       ...queryConfig,
     },
   );

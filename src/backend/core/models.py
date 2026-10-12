@@ -11,10 +11,13 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import mail, validators
 from django.db import models
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 from django.utils.translation import gettext_lazy as _
 
 from solo.models import SingletonModel
 from timezone_field import TimeZoneField
+
+from core.assistant_rh import MINISTRIES
 
 logger = getLogger(__name__)
 
@@ -161,6 +164,9 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         ),
     )
 
+    assistant_rh_admitted = models.BooleanField(default=False)
+    assistant_rh_session_version = models.UUIDField(default=uuid.uuid4, editable=False)
+
     # Application specific fields
     allow_conversation_analytics = models.BooleanField(
         _("allow conversation analytics"),
@@ -208,6 +214,36 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
     def __str__(self):
         """Return a string representation of the user."""
         return self.email or self.admin_email or str(self.id)
+
+    def save(self, *args, **kwargs):
+        if settings.ASSISTANT_RH_ENABLED and (not self.is_active or not self.assistant_rh_admitted):
+            previous = (
+                type(self)
+                .objects.filter(pk=self.pk)
+                .values("is_active", "assistant_rh_admitted")
+                .first()
+            )
+            if previous and (
+                (previous["is_active"] and not self.is_active)
+                or (previous["assistant_rh_admitted"] and not self.assistant_rh_admitted)
+            ):
+                self.assistant_rh_session_version = uuid.uuid4()
+                if kwargs.get("update_fields") is not None:
+                    kwargs["update_fields"] = set(kwargs["update_fields"]) | {
+                        "assistant_rh_session_version"
+                    }
+        super().save(*args, **kwargs)
+
+    def _get_session_auth_hash(self, secret=None):
+        original = super()._get_session_auth_hash(secret=secret)
+        if not settings.ASSISTANT_RH_ENABLED:
+            return original
+        return salted_hmac(
+            "core.User.assistant_rh_session",
+            original + str(self.assistant_rh_session_version),
+            secret=secret,
+            algorithm="sha256",
+        ).hexdigest()
 
     def email_user(self, subject, message, from_email=None, **kwargs):
         """Email this user."""
@@ -487,3 +523,22 @@ class ChatCooldownSettings(SingletonModel):
 
     class Meta:  # pylint: disable=missing-class-docstring
         verbose_name = "Chat Cooldown Settings"
+
+
+class MinistryGrant(models.Model):
+    """A logical corpus entitlement; no inference-provider identity is stored here."""
+
+    group = models.ForeignKey(
+        "auth.Group", on_delete=models.CASCADE, related_name="assistant_rh_grants"
+    )
+    ministry = models.CharField(max_length=10, choices=[(m, m.upper()) for m in MINISTRIES])
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "ministry"], name="assistant_rh_group_ministry_unique"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.group}: {self.ministry}"

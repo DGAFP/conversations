@@ -1,0 +1,524 @@
+"""Individual identity and current corpus boundaries of the Assistant RH fork."""
+
+import json
+import re
+import uuid
+from importlib import import_module
+from types import SimpleNamespace
+
+from django.contrib import admin
+from django.contrib.auth.models import Group
+
+import httpx
+import jwt
+import pytest
+from asgiref.sync import async_to_sync
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelHTTPError
+from rest_framework.exceptions import PermissionDenied
+
+from core.api.serializers import UserSerializer
+from core.assistant_rh import configured_models, current_models, visible_conversations
+from core.authentication.backends import OIDCAuthenticationBackend, OIDCRoleAccessDenied
+from core.factories import UserFactory
+from core.models import MinistryGrant, User
+
+from chat.assistant_rh_delegation import DelegationAuth, delegated_model, sign_assertion
+from chat.llm_configuration import LLModel, LLMProvider
+from chat.models import ChatConversation, ChatProject
+
+pytestmark = pytest.mark.django_db(transaction=True)
+BASE = "/api/v1.0/"
+
+
+@pytest.fixture(name="rh")
+def assistant_rh_setup(settings, tmp_path):
+    """Create an admitted user, corpus grants and isolated signing keys."""
+    settings.ASSISTANT_RH_ENABLED = True
+    settings.ASSISTANT_RH_API_URL = "https://rh.test/v1"
+    settings.ASSISTANT_RH_DELEGATION_ISSUER = "conversations-test"
+    settings.ASSISTANT_RH_API_AUDIENCE = "rh-test"
+    settings.ASSISTANT_RH_SIGNING_KID = "test-20261012"
+    key = Ed25519PrivateKey.generate()
+    signing_file = tmp_path / "signing.pem"
+    signing_file.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+    audit_file = tmp_path / "audit.key"
+    audit_file.write_bytes(b"a" * 32)
+    settings.ASSISTANT_RH_SIGNING_KEY_FILE = str(signing_file)
+    settings.ASSISTANT_RH_AUDIT_KEY_FILE = str(audit_file)
+    provider = LLMProvider(
+        hrid="rh", kind="assistant-rh", api_key="unused", base_url="https://rh.test/v1"
+    )
+    settings.LLM_CONFIGURATIONS = {
+        name: LLModel(
+            hrid=name,
+            model_name=name,
+            human_readable_name=name,
+            provider=provider,
+            is_active=True,
+            tools=[],
+            system_prompt="",
+            supports_streaming=False,
+        )
+        for name in ("assistant-rh-matte", "assistant-rh-mso")
+    }
+    settings.LLM_DEFAULT_MODEL_HRID = "assistant-rh-matte"
+    group = Group.objects.create(name="matte")
+    MinistryGrant.objects.create(group=group, ministry="matte")
+    user = UserFactory(assistant_rh_admitted=True)
+    user.groups.add(group)
+    return SimpleNamespace(user=user, group=group, key=key, settings=settings)
+
+
+def login(client, user):
+    """A server-created session, with the random audit identifier set at OIDC login."""
+    client.force_login(user)
+    session = client.session
+    session["assistant_rh_audit_id"] = uuid.uuid4().hex
+    session.save()
+    return session.session_key
+
+
+def decode(rh, token):
+    """Verify the assertion with the test public key, issuer and audience."""
+    return jwt.decode(
+        token,
+        rh.key.public_key(),
+        algorithms=["EdDSA"],
+        audience="rh-test",
+        issuer="conversations-test",
+    )
+
+
+def create_chat(client, hrid="assistant-rh-matte", **kwargs):
+    """Create a conversation through the same API used by the browser."""
+    return client.post(
+        BASE + "chats/", {"title": "Question RH", "model_hrid": hrid, **kwargs}, format="json"
+    )
+
+
+def test_admission_is_independent_of_authentication_and_email(rh, api_client):
+    """Admission is independent of authentication and email."""
+    rh.user.assistant_rh_admitted = False
+    rh.user.save()
+    login(api_client, rh.user)
+    assert api_client.get(BASE + "llm-configuration/").status_code == 403
+    assert create_chat(api_client).status_code == 403
+    assert current_models(rh.user) == []
+
+
+def test_no_automatic_corpus_and_no_default(rh, api_client):
+    """No automatic corpus and no default."""
+    rh.user.groups.clear()
+    login(api_client, rh.user)
+    assert api_client.get(BASE + "llm-configuration/").json()["models"] == []
+    assert create_chat(api_client).status_code == 400
+    assert create_chat(api_client, hrid="").status_code == 400
+    assert current_models(rh.user) == []
+
+
+def test_multi_group_union_catalogue_and_no_cache_between_users(rh, api_client):
+    """Multi group union catalogue and no cache between users."""
+    extra = Group.objects.create(name="mso")
+    MinistryGrant.objects.create(group=extra, ministry="mso")
+    rh.user.groups.add(extra)
+    login(api_client, rh.user)
+    response = api_client.get(BASE + "llm-configuration/")
+    assert {m["hrid"] for m in response.json()["models"]} == {
+        "assistant-rh-matte",
+        "assistant-rh-mso",
+    }
+    assert response["Cache-Control"] == "no-store"
+    other = UserFactory(assistant_rh_admitted=True)
+    login(api_client, other)
+    assert api_client.get(BASE + "llm-configuration/").json()["models"] == []
+    assert current_models(rh.user) == ["assistant-rh-matte", "assistant-rh-mso"]
+
+
+def test_ministry_fixed_at_creation_and_client_cannot_change_it(rh, api_client):
+    """Ministry fixed at creation and client cannot change it."""
+    login(api_client, rh.user)
+    response = create_chat(api_client, ministry="mso")
+    assert response.status_code == 201
+    chat = ChatConversation.objects.get(pk=response.json()["id"])
+    assert chat.owner == rh.user and chat.ministry == "matte"
+    assert chat.model_hrid == "assistant-rh-matte"
+    for body in ({"model_hrid": "assistant-rh-mso"}, {"ministry": "mso"}):
+        assert api_client.patch(BASE + f"chats/{chat.pk}/", body, format="json").status_code == 400
+    assert create_chat(api_client, hrid="assistant-rh-mso").status_code == 400
+    assert (
+        api_client.post(
+            BASE + f"chats/{chat.pk}/conversation/?model_hrid=assistant-rh-mso",
+            {"messages": []},
+            format="json",
+        ).status_code
+        == 403
+    )
+
+
+def test_history_private_hidden_and_restored_in_lists_projects_and_retrieve(rh, api_client):
+    """History private hidden and restored in lists projects and retrieve."""
+    login(api_client, rh.user)
+    project = ChatProject.objects.create(owner=rh.user, title="RH", icon="folder", color="color_1")
+    chat = ChatConversation.objects.create(
+        owner=rh.user, ministry="matte", model_hrid="assistant-rh-matte", project=project
+    )
+    other = UserFactory(assistant_rh_admitted=True)
+    other.groups.add(rh.group)
+    private = ChatConversation.objects.create(owner=other, ministry="matte")
+    assert api_client.get(BASE + f"chats/{private.pk}/").status_code == 404
+    assert (
+        api_client.post(BASE + f"chats/{private.pk}/score-message/", {}, format="json").status_code
+        == 404
+    )
+    assert list(visible_conversations(rh.user)) == [chat]
+    rh.user.groups.clear()
+    assert api_client.get(BASE + f"chats/{chat.pk}/").status_code == 404
+    assert api_client.get(BASE + "chats/").json()["results"] == []
+    assert api_client.get(BASE + f"projects/{project.pk}/").json()["conversations"] == []
+    assert ChatConversation.objects.filter(pk=chat.pk).exists()
+    replacement = Group.objects.create(name="replacement")
+    MinistryGrant.objects.create(group=replacement, ministry="matte")
+    rh.user.groups.add(replacement)
+    assert api_client.get(BASE + f"chats/{chat.pk}/").status_code == 200
+
+
+def test_assertions_match_api_profile_and_session_audit_is_stable(rh, api_client):
+    """Assertions match api profile and session audit is stable."""
+    session_key = login(api_client, rh.user)
+    first = sign_assertion(rh.user.pk, session_key, "matte")
+    second = sign_assertion(rh.user.pk, session_key, "matte")
+    a, b = decode(rh, first), decode(rh, second)
+    assert a["sub"] == str(rh.user.pk)
+    assert a["models"] == ["assistant-rh-matte"] and a["ministry"] == "matte"
+    assert a["jti"] != b["jti"] and re.fullmatch(r"[A-Za-z0-9_-]{16,128}", a["jti"])
+    # Integers only: bool is a subclass but is not a valid NumericDate.
+    # pylint: disable-next=unidiomatic-typecheck
+    assert type(a["iat"]) is int and a["exp"] - a["iat"] == 120
+    assert re.fullmatch(r"[0-9a-f]{64}", a["audit_session"])
+    assert a["audit_session"] == b["audit_session"]
+    assert a["audit_session"] != session_key
+    assert jwt.get_unverified_header(first) == {
+        "alg": "EdDSA",
+        "kid": "test-20261012",
+        "typ": "JWT",
+    }
+    api_client.logout()
+    new_session = login(api_client, rh.user)
+    assert (
+        decode(rh, sign_assertion(rh.user.pk, new_session, "matte"))["audit_session"]
+        != a["audit_session"]
+    )
+
+
+@pytest.mark.parametrize(
+    "revocation", ["logout", "disabled", "admission", "grant", "password", "expired"]
+)
+def test_signer_rechecks_each_attempt_and_rejects_revoked_sessions(rh, api_client, revocation):
+    """Signer rechecks each attempt and rejects revoked sessions."""
+    session_key = login(api_client, rh.user)
+    sign_assertion(rh.user.pk, session_key, "matte")
+    if revocation == "logout":
+        api_client.logout()
+    elif revocation == "disabled":
+        User.objects.filter(pk=rh.user.pk).update(is_active=False)
+    elif revocation == "admission":
+        User.objects.filter(pk=rh.user.pk).update(assistant_rh_admitted=False)
+    elif revocation == "grant":
+        rh.user.groups.clear()
+    elif revocation == "password":
+        rh.user.set_password("changed-password")
+        rh.user.save()
+    else:
+        store = import_module(rh.settings.SESSION_ENGINE).SessionStore(session_key=session_key)
+        store.load()
+        store.set_expiry(-1)
+        store.save()
+    with pytest.raises(PermissionDenied):
+        sign_assertion(rh.user.pk, session_key, "matte")
+
+
+def test_empty_grants_can_delegate_empty_catalogue(rh, api_client):
+    """Empty grants can delegate empty catalogue."""
+    session_key = login(api_client, rh.user)
+    rh.user.groups.clear()
+    assert decode(rh, sign_assertion(rh.user.pk, session_key))["models"] == []
+
+
+def test_subject_identity_stable_and_never_merged_by_email(rh):
+    """Subject identity stable and never merged by email."""
+    backend = OIDCAuthenticationBackend()
+    rh.user.sub = "proconnect-original"
+    rh.user.save()
+    old_pk, email = rh.user.pk, rh.user.email
+    assert backend.get_existing_user("proconnect-original", email).pk == old_pk
+    assert backend.get_existing_user("other-sub", email) is None
+    rh.user.delete()
+    replacement = UserFactory(sub="proconnect-original", email=email)
+    assert replacement.pk != old_pk
+    assert replacement.assistant_rh_admitted is False
+    assert current_models(replacement) == []
+
+
+def test_oidc_requires_central_approval_and_creates_random_audit_id(rh):
+    """Oidc requires central approval and creates random audit id."""
+    backend = OIDCAuthenticationBackend()
+    backend.request = SimpleNamespace(session={})
+    backend.post_get_or_create_user(rh.user, {}, False)
+    first = backend.request.session["assistant_rh_audit_id"]
+    backend.post_get_or_create_user(rh.user, {}, False)
+    assert backend.request.session["assistant_rh_audit_id"] != first
+    rh.user.assistant_rh_admitted = False
+    with pytest.raises(OIDCRoleAccessDenied):
+        backend.post_get_or_create_user(rh.user, {}, False)
+
+
+@pytest.mark.usefixtures("rh")
+def test_non_central_admin_cannot_edit_grants_or_admission():
+    """Non central admin cannot edit grants or admission."""
+    staff = UserFactory(is_staff=True)
+    request = SimpleNamespace(user=staff)
+    for model in (User, Group, MinistryGrant):
+        handler = admin.site._registry[model]  # pylint: disable=protected-access
+        assert not handler.has_add_permission(request)
+        assert not handler.has_change_permission(request)
+        assert not handler.has_delete_permission(request)
+
+
+def test_disabled_config_and_foreign_provider_absent_from_catalogue(rh):
+    """Disabled config and foreign provider absent from catalogue."""
+    config = rh.settings.LLM_CONFIGURATIONS["assistant-rh-matte"]
+    config.is_active = False
+    assert configured_models(rh.user) == {}
+    config.is_active = True
+    config.provider.kind = "openai"
+    assert configured_models(rh.user) == {}
+
+
+def test_no_static_fallback_or_unsigned_background_calls(rh):
+    """No static fallback or unsigned background calls."""
+    config = rh.settings.LLM_CONFIGURATIONS["assistant-rh-matte"]
+    with pytest.raises(PermissionDenied):
+        delegated_model(config, None)
+    with pytest.raises(PermissionDenied):
+        delegated_model(config, (rh.user.pk, "session", "mso"))
+
+
+def test_http_attempts_resign_and_use_safe_correlation_id(rh, api_client):
+    """Http attempts resign and use safe correlation id."""
+    session_key = login(api_client, rh.user)
+    seen = []
+
+    async def send():
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json={})
+
+        async with httpx.AsyncClient(
+            auth=DelegationAuth(rh.user.pk, session_key, "matte"),
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            for _ in range(2):
+                await client.post(
+                    "https://rh.test/v1/chat/completions", json={"model": "assistant-rh-matte"}
+                )
+            for url, model in (
+                ("https://other.test/v1/chat/completions", "assistant-rh-matte"),
+                ("https://rh.test/v1/chat/completions", "assistant-rh-mso"),
+            ):
+                with pytest.raises(PermissionDenied):
+                    await client.post(url, json={"model": model})
+
+    async_to_sync(send)()
+    assert len(seen) == 2
+    claims = [
+        decode(rh, request.headers["authorization"].removeprefix("Bearer ")) for request in seen
+    ]
+    assert claims[0]["jti"] != claims[1]["jti"]
+    for request in seen:
+        assert re.fullmatch(r"[0-9a-f]{32}", request.headers["X-Client-Request-Id"])
+
+
+def test_legacy_attachments_disabled_and_no_presigned_url(rh, api_client):
+    """Legacy attachments disabled and no presigned url."""
+    login(api_client, rh.user)
+    chat = ChatConversation.objects.create(owner=rh.user, ministry="matte")
+    response = api_client.post(
+        BASE + f"chats/{chat.pk}/attachments/", {"file_name": "file.pdf"}, format="json"
+    )
+    assert response.status_code == 403
+    assert api_client.get(BASE + "file-stream/some-old-token/").status_code == 404
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_openai_gateway_json_and_sse_use_individual_delegation(rh, api_client, respx_mock, stream):
+    """Exercise the actual SDK transport, not only the standalone JWT encoder."""
+
+    session_key = login(api_client, rh.user)
+    completion_id = "chatcmpl-" + uuid.uuid4().hex
+    seen = []
+
+    def response(request):
+        seen.append(request)
+        assert json.loads(request.content)["model"] == "assistant-rh-matte"
+        common = {"id": completion_id, "created": 1, "model": "assistant-rh-matte"}
+        if stream:
+            chunks = [
+                {
+                    **common,
+                    "object": "chat.completion.chunk",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": "Réponse RH"},
+                            "finish_reason": None,
+                        }
+                    ],
+                },
+                {
+                    **common,
+                    "object": "chat.completion.chunk",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                },
+            ]
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/event-stream"},
+                text="".join("data: " + json.dumps(chunk) + "\n\n" for chunk in chunks)
+                + "data: [DONE]\n\n",
+            )
+        return httpx.Response(
+            200,
+            json={
+                **common,
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Réponse RH"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+        )
+
+    respx_mock.post("https://rh.test/v1/chat/completions").mock(side_effect=response)
+
+    async def run():
+        model = delegated_model(
+            rh.settings.LLM_CONFIGURATIONS["assistant-rh-matte"], (rh.user.pk, session_key, "matte")
+        )
+        agent = Agent(model=model)
+        try:
+            if stream:
+                async with agent.run_stream("Question RH") as result:
+                    return "".join([text async for text in result.stream_text(delta=True)])
+            return (await agent.run("Question RH")).output
+        finally:
+            await model.client.close()
+
+    assert async_to_sync(run)() == "Réponse RH"
+    assert len(seen) == 1
+    assert decode(rh, seen[0].headers["Authorization"].removeprefix("Bearer "))["sub"] == str(
+        rh.user.pk
+    )
+
+
+def test_sdk_never_automatically_replays_bearer_on_provider_failure(rh, api_client, respx_mock):
+    """Sdk never automatically replays bearer on provider failure."""
+    session_key = login(api_client, rh.user)
+    route = respx_mock.post("https://rh.test/v1/chat/completions").respond(
+        503, json={"error": {"message": "Unavailable"}}
+    )
+
+    async def run():
+        model = delegated_model(
+            rh.settings.LLM_CONFIGURATIONS["assistant-rh-matte"], (rh.user.pk, session_key, "matte")
+        )
+        try:
+            with pytest.raises(ModelHTTPError):
+                await Agent(model=model).run("Question RH")
+        finally:
+            await model.client.close()
+
+    async_to_sync(run)()
+    assert route.call_count == 1
+
+
+def test_chat_handler_persists_individual_history_and_stops_without_default_model(
+    rh, api_client, respx_mock
+):
+    """Chat handler persists individual history and stops without default model."""
+    login(api_client, rh.user)
+    chat = ChatConversation.objects.get(pk=create_chat(api_client).json()["id"])
+    route = respx_mock.post("https://rh.test/v1/chat/completions").respond(
+        200,
+        json={
+            "id": "chatcmpl-" + uuid.uuid4().hex,
+            "created": 1,
+            "model": "assistant-rh-matte",
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Réponse RH"},
+                    "finish_reason": "stop",
+                }
+            ],
+        },
+    )
+    response = api_client.post(
+        BASE + f"chats/{chat.pk}/conversation/",
+        {
+            "messages": [
+                {
+                    "id": "question",
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Question RH"}],
+                }
+            ]
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    body = b"".join(response.streaming_content).decode()
+    assert "[DONE]" in body and route.call_count == 1
+    deltas = [json.loads(line[6:]) for line in body.splitlines() if line.startswith("data: {")]
+    assert "".join(event.get("delta", "") for event in deltas) == "Réponse RH"
+    chat.refresh_from_db()
+    assert chat.owner == rh.user and chat.ministry == "matte"
+    assert len(chat.messages) == 2
+    assert api_client.post(BASE + f"chats/{chat.pk}/stop-streaming/").status_code == 200
+    assert route.call_count == 1
+
+
+@pytest.mark.parametrize("field", ["is_active", "assistant_rh_admitted"])
+def test_reactivation_does_not_restore_revoked_sessions(rh, api_client, field):
+    """Reactivation does not restore revoked sessions."""
+    session_key = login(api_client, rh.user)
+    setattr(rh.user, field, False)
+    rh.user.save(update_fields=[field])
+    setattr(rh.user, field, True)
+    rh.user.save(update_fields=[field])
+    with pytest.raises(PermissionDenied):
+        sign_assertion(rh.user.pk, session_key, "matte")
+    fresh = login(api_client, rh.user)
+    assert decode(rh, sign_assertion(rh.user.pk, fresh, "matte"))["sub"] == str(rh.user.pk)
+
+
+def test_profile_update_cannot_undo_concurrent_administrative_revocation(rh, api_client):
+    """Profile update cannot undo concurrent administrative revocation."""
+    session_key = login(api_client, rh.user)
+    stale_user = User.objects.get(pk=rh.user.pk)
+    rh.user.is_active = False
+    rh.user.save()
+    serializer = UserSerializer(stale_user, data={"language": "fr-fr"}, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    rh.user.refresh_from_db()
+    assert rh.user.is_active is False
+    assert rh.user.language == "fr-fr"
+    with pytest.raises(PermissionDenied):
+        sign_assertion(rh.user.pk, session_key, "matte")

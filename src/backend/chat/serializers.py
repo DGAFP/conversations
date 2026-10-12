@@ -10,6 +10,7 @@ from django_pydantic_field.rest_framework import SchemaField  # pylint: disable=
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from core.assistant_rh import MODEL_PREFIX, configured_models
 from core.file_upload.enums import AttachmentStatus, FileUploadMode
 from core.file_upload.utils import generate_upload_policy
 
@@ -22,6 +23,7 @@ class ChatConversationSerializer(serializers.ModelSerializer):
     """Serializer for chat conversations."""
 
     owner = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    model_hrid = serializers.CharField(write_only=True, required=False)
     messages = SchemaField(schema=list[UIMessage], read_only=True)
     images_skipped = serializers.SerializerMethodField(
         help_text=(
@@ -44,6 +46,8 @@ class ChatConversationSerializer(serializers.ModelSerializer):
             "owner",
             "project",
             "images_skipped",
+            "ministry",
+            "model_hrid",
         ]
         read_only_fields = [
             "id",
@@ -51,6 +55,7 @@ class ChatConversationSerializer(serializers.ModelSerializer):
             "updated_at",
             "messages",
             "images_skipped",
+            "ministry",
         ]
 
     @staticmethod
@@ -85,6 +90,22 @@ class ChatConversationSerializer(serializers.ModelSerializer):
         )
 
         return any(True for _ in iter_image_attachments(obj.messages))
+
+    def validate(self, attrs):
+        if settings.ASSISTANT_RH_ENABLED:
+            if self.instance is not None:
+                if "model_hrid" in attrs or "ministry" in self.initial_data:
+                    raise serializers.ValidationError("Le ministère est fixé à la création.")
+            else:
+                hrid = attrs.get("model_hrid")
+                if hrid not in configured_models(self.context["request"].user):
+                    raise serializers.ValidationError(
+                        {"model_hrid": "Choisissez un ministère autorisé."}
+                    )
+                attrs["ministry"] = hrid.removeprefix(MODEL_PREFIX)
+        else:
+            attrs.pop("model_hrid", None)
+        return attrs
 
     def validate_project(self, project):
         """Ensure the project belongs to the current user."""
@@ -125,6 +146,10 @@ class ChatConversationInputSerializer(serializers.Serializer):
         """Validate that messages is not empty."""
         if not messages:
             raise serializers.ValidationError("This list must not be empty.")
+        if settings.ASSISTANT_RH_ENABLED and any(
+            any(part.type == "file" for part in message.parts) for message in messages
+        ):
+            raise serializers.ValidationError("Pièces jointes indisponibles dans Assistant RH.")
         return messages
 
 

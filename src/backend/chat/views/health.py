@@ -2,9 +2,11 @@
 
 from django.core.cache import cache
 
-from rest_framework import permissions, status
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from core.assistant_rh import AssistantRHSessionPermission
 
 from chat import models, serializers
 from chat.assistant_health import compute_assistant_health_banners
@@ -14,7 +16,7 @@ from chat.model_health import model_health_cache_key
 class ModelHealthView(APIView):
     """Return the latest known health status for each model."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AssistantRHSessionPermission]
 
     def get(self, request):
         """Return latest status per (provider, model_id), Redis status wins over DB."""
@@ -52,7 +54,7 @@ class ModelHealthView(APIView):
 class AssistantHealthView(APIView):
     """Return banners and blocked status based on live model health."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AssistantRHSessionPermission]
 
     def get(self, request):
         """Compute and return assistant health banners."""

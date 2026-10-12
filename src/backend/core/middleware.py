@@ -9,6 +9,9 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.deprecation import MiddlewareMixin
 
+from rest_framework.exceptions import PermissionDenied
+
+from core.assistant_rh import require_admission
 from core.models import MaintenanceMode
 
 logger = getLogger(__name__)
@@ -35,6 +38,27 @@ def is_maintenance_active() -> bool:
     if settings.MAINTENANCE_MODE:
         return True
     return MaintenanceMode.get_solo().is_active_now()
+
+
+class AssistantRHAdmissionMiddleware(MiddlewareMixin):
+    """Recheck disabled/pending accounts on every API request, including history."""
+
+    def process_request(self, request):
+        """Deny pending or disabled accounts before API dispatch."""
+        if not settings.ASSISTANT_RH_ENABLED or not request.path.startswith("/api/"):
+            return None
+        if request.user.is_authenticated:
+            try:
+                require_admission(request.user)
+            except PermissionDenied:
+                return JsonResponse({"code": "admission_required"}, status=403)
+        return None
+
+    def process_response(self, request, response):
+        """Keep individual API responses out of shared caches."""
+        if settings.ASSISTANT_RH_ENABLED and request.path.startswith("/api/"):
+            response["Cache-Control"] = "no-store"
+        return response
 
 
 class MaintenanceMiddleware(MiddlewareMixin):

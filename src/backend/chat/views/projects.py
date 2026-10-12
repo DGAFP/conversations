@@ -6,10 +6,11 @@ from django.conf import settings
 from django.db.models import Prefetch, Q
 from django.utils.module_loading import import_string
 
-from rest_framework import filters, permissions, viewsets
+from rest_framework import filters, viewsets
 
 from core.analytics import capture_event
 from core.api.viewsets import Pagination
+from core.assistant_rh import AssistantRHSessionPermission, visible_conversations
 
 from chat import models, serializers
 from chat.rate_limiting import ProjectCreateDailyThrottle, ProjectCreateHourlyThrottle
@@ -23,7 +24,7 @@ class ChatProjectViewSet(viewsets.ModelViewSet):  # pylint: disable=too-many-anc
     """ViewSet for managing projects."""
 
     pagination_class = Pagination
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AssistantRHSessionPermission]
     ordering = ["title"]
     ordering_fields = ["title", "created_at", "updated_at"]
     queryset = models.ChatProject.objects
@@ -35,7 +36,7 @@ class ChatProjectViewSet(viewsets.ModelViewSet):  # pylint: disable=too-many-anc
 
         conversations_prefetch = Prefetch(  # Prefetch conversations ordered by most recent first
             "conversations",
-            queryset=models.ChatConversation.objects.order_by("-created_at"),
+            queryset=visible_conversations(self.request.user).order_by("-created_at"),
         )
         return (
             self.queryset.filter(owner=self.request.user).prefetch_related(conversations_prefetch)

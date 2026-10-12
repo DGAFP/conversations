@@ -2,6 +2,7 @@
 
 import logging
 import re
+import secrets
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
@@ -71,6 +72,9 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         if not super().verify_claims(claims):
             return False
 
+        if settings.ASSISTANT_RH_ENABLED:
+            return True
+
         allowed_roles = settings.OIDC_ALLOWED_ROLES
         if not allowed_roles:
             return True
@@ -98,6 +102,9 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
 
     def get_existing_user(self, sub, email):
         """Fetch existing user by sub or email."""
+
+        if settings.ASSISTANT_RH_ENABLED:
+            return self.UserModel.objects.filter(sub=sub).first() if sub else None
 
         try:
             return self.UserModel.objects.get_user_by_sub_or_email(sub, email)
@@ -131,5 +138,11 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         The follow-up list is a marketing aid: recovering a missed contact is a
         re-import, not something worth persisting per-user state for.
         """
+        if settings.ASSISTANT_RH_ENABLED:
+            if user is None or not user.is_active or not user.assistant_rh_admitted:
+                raise OIDCRoleAccessDenied("Admission DGAFP required.")
+            self.request.session["assistant_rh_audit_id"] = secrets.token_urlsafe(32)
+            return
+
         if is_new_user and settings.BREVO_FOLLOWUP_LIST_ID:
             add_user_to_brevo_list([user.email], settings.BREVO_FOLLOWUP_LIST_ID)

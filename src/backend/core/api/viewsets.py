@@ -140,6 +140,7 @@ class ConfigView(drf.views.APIView):
             Return a dictionary of public settings.
         """
         array_settings = [
+            "ASSISTANT_RH_ENABLED",
             "STATUS_PAGE_URL",
             "ENVIRONMENT",
             "FRONTEND_CSS_URL",
