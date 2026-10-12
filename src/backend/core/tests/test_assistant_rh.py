@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 from django.contrib import admin
 from django.contrib.auth.models import Group
+from django.core.cache import cache
+from django.test import Client, RequestFactory
 
 import httpx
 import jwt
@@ -73,12 +75,9 @@ def assistant_rh_setup(settings, tmp_path):
 
 
 def login(client, user):
-    """A server-created session, with the random audit identifier set at OIDC login."""
+    """A server-created session, including the normal successful-login signal."""
     client.force_login(user)
-    session = client.session
-    session["assistant_rh_audit_id"] = uuid.uuid4().hex
-    session.save()
-    return session.session_key
+    return client.session.session_key
 
 
 def decode(rh, token):
@@ -262,17 +261,129 @@ def test_subject_identity_stable_and_never_merged_by_email(rh):
     assert current_models(replacement) == []
 
 
-def test_oidc_requires_central_approval_and_creates_random_audit_id(rh):
-    """Oidc requires central approval and creates random audit id."""
+def test_oidc_requires_central_approval(rh):
+    """OIDC admission remains mandatory before Django creates the session."""
     backend = OIDCAuthenticationBackend()
     backend.request = SimpleNamespace(session={})
     backend.post_get_or_create_user(rh.user, {}, False)
-    first = backend.request.session["assistant_rh_audit_id"]
-    backend.post_get_or_create_user(rh.user, {}, False)
-    assert backend.request.session["assistant_rh_audit_id"] != first
     rh.user.assistant_rh_admitted = False
     with pytest.raises(OIDCRoleAccessDenied):
         backend.post_get_or_create_user(rh.user, {}, False)
+
+
+@pytest.fixture(name="local_account")
+def local_account_setup(rh):
+    """Enable local login for a non-staff user with an actual hashed password."""
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ENABLED = True
+    rh.settings.LOGIN_REDIRECT_URL = "/"
+    rh.settings.LOGOUT_REDIRECT_URL = "/"
+    rh.user.admin_email = "local@example.invalid"
+    rh.user.set_password("Synthetic-passphrase-596!")
+    rh.user.save()
+    cache.clear()
+    yield {"username": rh.user.admin_email, "password": "Synthetic-passphrase-596!"}
+    cache.clear()
+
+
+def test_password_login_csrf_delegation_and_logout(rh, local_account):
+    """The real form creates a signable session without staff or OIDC privileges."""
+    client = Client(enforce_csrf_checks=True)
+    assert not rh.user.is_staff and not rh.user.is_superuser
+    response = client.get(BASE + "authenticate/")
+    assert response.status_code == 200
+    assert "Connexion à Assistant RH" in response.content.decode()
+    assert client.post(BASE + "authenticate/", local_account).status_code == 403
+    response = client.post(
+        BASE + "authenticate/?next=https://evil.invalid/",
+        local_account,
+        HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
+    )
+    assert response.status_code == 302 and response["Location"] == "/"
+    session_key = client.session.session_key
+    claims = decode(rh, sign_assertion(rh.user.pk, session_key, "matte"))
+    assert claims["sub"] == str(rh.user.pk)
+    assert claims["models"] == ["assistant-rh-matte"]
+    assert client.get(BASE + "llm-configuration/").status_code == 200
+    assert client.get("/admin/").status_code == 302
+    assert client.get(BASE + "logout/").status_code == 200
+    assert client.post(BASE + "logout/").status_code == 403
+    assert sign_assertion(rh.user.pk, session_key, "matte")
+    assert (
+        client.post(
+            BASE + "logout/", HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value
+        ).status_code
+        == 302
+    )
+    with pytest.raises(PermissionDenied):
+        sign_assertion(rh.user.pk, session_key, "matte")
+    client.get(BASE + "authenticate/")
+    assert (
+        client.post(
+            BASE + "authenticate/",
+            local_account,
+            HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
+        ).status_code
+        == 302
+    )
+    renewed = decode(rh, sign_assertion(rh.user.pk, client.session.session_key, "matte"))
+    assert renewed["sub"] == claims["sub"]
+    assert renewed["audit_session"] != claims["audit_session"]
+    rh.user.set_password("Replacement-passphrase-596!")
+    rh.user.save()
+    with pytest.raises(PermissionDenied):
+        sign_assertion(rh.user.pk, client.session.session_key, "matte")
+
+
+@pytest.mark.parametrize("denied", ["wrong_password", "pending", "inactive"])
+def test_local_login_denies_invalid_or_unadmitted_accounts(rh, local_account, client, denied):
+    """No session or assertion can be created by a denied account."""
+    if denied == "wrong_password":
+        local_account["password"] = "wrong"
+    elif denied == "pending":
+        rh.user.assistant_rh_admitted = False
+    else:
+        rh.user.is_active = False
+    rh.user.save()
+    assert client.post(BASE + "authenticate/", local_account).status_code == 200
+    assert "_auth_user_id" not in client.session
+    assert "assistant_rh_audit_id" not in client.session
+
+
+def test_local_login_throttled_and_configured_explicitly(rh, local_account, client):
+    """Bound failed attempts and keep upstream login when either flag is off."""
+    config = client.get(BASE + "config/").json()
+    assert config["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] is True
+    assert config["FRONTEND_SILENT_LOGIN_ENABLED"] is False
+    local_account["password"] = "wrong"
+    for _ in range(10):
+        assert client.post(BASE + "authenticate/", local_account).status_code == 200
+    response = client.post(BASE + "authenticate/", local_account)
+    assert response.status_code == 429 and int(response["Retry-After"]) > 0
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ENABLED = False
+    assert client.get(BASE + "authenticate/")["Location"].startswith("http://oidc.test/")
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ENABLED = True
+    rh.settings.ASSISTANT_RH_ENABLED = False
+    assert client.get(BASE + "authenticate/")["Location"].startswith("http://oidc.test/")
+    assert client.get(BASE + "config/").json()["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] is False
+
+
+@pytest.mark.usefixtures("rh")
+def test_admin_can_provision_local_account_without_staff_rights():
+    """The standard admin creation form must accept the actual login field."""
+    request = RequestFactory().get("/admin/core/user/add/")
+    request.user = UserFactory(is_staff=True, is_superuser=True)
+    form_class = admin.site._registry[User].get_form(request)  # pylint: disable=protected-access
+    form = form_class(
+        data={
+            "admin_email": "new@example.invalid",
+            "password1": "Synthetic-passphrase-596!",
+            "password2": "Synthetic-passphrase-596!",
+        }
+    )
+    assert form.is_valid(), form.errors
+    user = form.save()
+    assert user.check_password("Synthetic-passphrase-596!")
+    assert not user.is_staff and not user.is_superuser and not user.assistant_rh_admitted
 
 
 @pytest.mark.usefixtures("rh")

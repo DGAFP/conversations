@@ -16,6 +16,11 @@ from . import models
 class UserAdmin(auth_admin.UserAdmin):
     """Admin class for the User model"""
 
+    def get_fieldsets(self, request, obj=None):
+        if settings.ASSISTANT_RH_ENABLED and obj is None:
+            return ((None, {"fields": ("admin_email", "password1", "password2")}),)
+        return super().get_fieldsets(request, obj)
+
     def has_change_permission(self, request, obj=None):
         if settings.ASSISTANT_RH_ENABLED:
             return request.user.is_active and request.user.is_superuser

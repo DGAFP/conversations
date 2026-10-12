@@ -13,7 +13,7 @@ décrit le profil technique livré ; il ne prouve pas une recette ProConnect.
 
 Le mode est désactivé par défaut pour conserver les parcours upstream. Son
 activation exige les deux migrations Django ajoutées et une nouvelle connexion
-OIDC des utilisateurs ; les anciennes sessions n’ont pas le nonce d’audit.
+des utilisateurs ; les anciennes sessions n’ont pas le nonce d’audit.
 Aucune admission ni habilitation existante n’est déduite ou reprise automatiquement.
 
 ```dotenv
@@ -26,6 +26,47 @@ ASSISTANT_RH_SIGNING_KID=staging-20261012
 ASSISTANT_RH_AUDIT_KEY_FILE=/run/secrets/rh-audit.key
 OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION=false
 ```
+
+### Connexion locale temporaire, avant le raccordement OIDC
+
+Ajouter `ASSISTANT_RH_LOCAL_LOGIN_ENABLED=true` et redémarrer le backend.
+Ce réglage n’a d’effet qu’avec `ASSISTANT_RH_ENABLED=true` ; il est désactivé
+par défaut. Aucun endpoint ni secret OIDC n’est nécessaire dans ce mode.
+Configurer `LOGIN_REDIRECT_URL` et `LOGOUT_REDIRECT_URL` vers l’URL de l’interface.
+Le bouton de connexion ouvre le formulaire Django à `/api/v1.0/authenticate/`.
+La connexion silencieuse et le bouton ProConnect sont remplacés dans ce mode.
+
+Le superutilisateur crée chaque compte dans `/admin/core/user/add/` avec son
+**admin email** (identifiant de connexion) et un mot de passe. Ce nom de champ
+historique ne donne aucun droit d’administration : laisser `is_staff` et
+`is_superuser` décochés. Le compte créé reste non admis ; l’administrateur valide
+ensuite `assistant_rh_admitted` et ses groupes/ministères comme décrit ci-dessous.
+La réinitialisation du mot de passe passe par l’administration Django ; il n’y a
+ni inscription publique ni récupération par e-mail dans ce parcours temporaire.
+
+Le navigateur fait un GET du formulaire pour obtenir le cookie et le jeton CSRF,
+puis un POST `application/x-www-form-urlencoded` sur la même URL :
+
+```text
+username=alice%40example.invalid&password=<mot-de-passe>&csrfmiddlewaretoken=<jeton-CSRF>
+```
+
+Après succès, le cookie de session autorise les mêmes requêtes de messages.
+Le mot de passe n’est jamais transmis à l’API RH. GET `/api/v1.0/logout/` affiche
+une confirmation ; POST avec CSRF détruit la session. Une redirection `next`
+vers un autre hôte est refusée par Django.
+
+Les tentatives sont limitées à 10/minute par IP du pair réseau dans le cache
+Django. Utiliser le cache partagé de cible et HTTPS ; derrière un reverse proxy,
+le pair peut être commun à plusieurs utilisateurs. Le limiteur ne fait pas
+confiance à un en-tête `X-Forwarded-For` fourni par le client.
+
+Pour passer à OIDC, remettre le réglage à `false` avec la configuration OIDC,
+puis redémarrer. Le rattachement vérifié des sujets OIDC aux UUID des comptes
+locaux reste une opération à préparer avant cette bascule : aucune fusion par
+e-mail n’est faite automatiquement. Les sessions locales déjà ouvertes ne sont
+pas révoquées par le seul changement de réglage ; les révoquer explicitement si
+la bascule doit imposer une nouvelle authentification.
 
 Les fichiers secrets sont montés uniquement dans le backend : clé privée
 Ed25519 au format PEM PKCS8 et clé d’audit aléatoire d’au moins 32 octets.
@@ -77,8 +118,10 @@ l’API lors de la recette. Un modèle configuré n’accorde aucun droit à lui
 
 ## Administration et admission
 
-1. Un utilisateur se connecte via ProConnect/OIDC. Son compte interne est créé
+1. En OIDC, un utilisateur se connecte via ProConnect : son compte interne est créé
    sans admission et sans corpus, puis redirigé vers la page d’accès refusé.
+   En connexion locale, l’administrateur crée le compte ; tant qu’il n’est pas
+   admis, le formulaire refuse la connexion.
 2. Un administrateur central DGAFP, représenté par un superutilisateur Django,
    valide `assistant_rh_admitted` dans l’administration du compte. La validation
    centrale est la voie livrée ; il n’est pas nécessaire de préparer une invitation.
@@ -106,7 +149,7 @@ Les anciennes conversations sans ministère ne sont pas réattribuées.
 Chaque envoi HTTP relit session, admission et droits, puis signe un JWS EdDSA avec
 `sub`, `models`, `ministry`, `iss`, `aud`, `iat`, `exp` (120 s), un `jti` neuf et
 `audit_session`. Ce dernier est le HMAC-SHA-256 d’un nonce aléatoire interne,
-renouvelé à chaque connexion OIDC, avec une clé dédiée. Logout, expiration,
+renouvelé à chaque connexion Django réussie (locale ou OIDC), avec une clé dédiée. Logout, expiration,
 désactivation, retrait d’admission et changement du mot de passe invalident
 l’émission suivante. La désactivation ou le retrait d’admission par le service
 d’administration révoque aussi les sessions antérieures après réactivation. Les retries automatiques du SDK sont désactivés ; un nouvel

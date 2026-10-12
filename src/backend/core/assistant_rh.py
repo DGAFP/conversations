@@ -1,16 +1,26 @@
 """Current author and corpus policy. Never infer a grant from an email or SIRET."""
 
 import hmac
+import secrets
 from importlib import import_module
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.signals import user_logged_in
+from django.dispatch import receiver
 
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
 MINISTRIES = ("masa", "matte", "mi", "mso")
 MODEL_PREFIX = "assistant-rh-"
+
+
+@receiver(user_logged_in, dispatch_uid="assistant_rh_session_audit")
+def initialize_session_audit(request, **_kwargs):
+    """Renew the audit nonce on every successful Django login, local or OIDC."""
+    if settings.ASSISTANT_RH_ENABLED:
+        request.session["assistant_rh_audit_id"] = secrets.token_urlsafe(32)
 
 
 def current_models(user):

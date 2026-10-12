@@ -165,6 +165,11 @@ class ConfigView(drf.views.APIView):
             else:
                 dict_settings[setting] = getattr(settings, setting)
 
+        dict_settings["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] = (
+            settings.ASSISTANT_RH_ENABLED and settings.ASSISTANT_RH_LOCAL_LOGIN_ENABLED
+        )
+        if dict_settings["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"]:
+            dict_settings["FRONTEND_SILENT_LOGIN_ENABLED"] = False
         dict_settings["theme_customization"] = self._load_theme_customization()
 
         dict_settings["chat_upload_accept"] = ",".join(settings.RAG_FILES_ACCEPTED_FORMATS)

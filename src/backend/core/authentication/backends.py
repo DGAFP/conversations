@@ -2,7 +2,6 @@
 
 import logging
 import re
-import secrets
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
@@ -141,7 +140,6 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         if settings.ASSISTANT_RH_ENABLED:
             if user is None or not user.is_active or not user.assistant_rh_admitted:
                 raise OIDCRoleAccessDenied("Admission DGAFP required.")
-            self.request.session["assistant_rh_audit_id"] = secrets.token_urlsafe(32)
             return
 
         if is_new_user and settings.BREVO_FOLLOWUP_LIST_ID:

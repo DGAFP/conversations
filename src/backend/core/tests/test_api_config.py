@@ -48,6 +48,7 @@ def test_api_config(is_authenticated):
     assert response.status_code == HTTP_200_OK
     assert response.json() == {
         "ASSISTANT_RH_ENABLED": False,
+        "ASSISTANT_RH_LOCAL_LOGIN_ENABLED": False,
         "STATUS_PAGE_URL": "https://status.example.com",
         "DOCS_BASE_URL": None,
         "ENVIRONMENT": "test",
@@ -234,6 +235,7 @@ async def test_api_config_async(is_authenticated):
     assert response.status_code == HTTP_200_OK
     assert response.json() == {
         "ASSISTANT_RH_ENABLED": False,
+        "ASSISTANT_RH_LOCAL_LOGIN_ENABLED": False,
         "STATUS_PAGE_URL": "https://status.example.com",
         "DOCS_BASE_URL": None,
         "ENVIRONMENT": "test",
