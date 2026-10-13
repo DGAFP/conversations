@@ -21,7 +21,7 @@ from core.api.viewsets import Pagination, SerializerPerActionMixin
 from core.assistant_rh import (
     AssistantRHSessionPermission,
     configured_models,
-    require_admission,
+    request_models,
     visible_conversations,
 )
 from core.file_upload.enums import AttachmentStatus
@@ -145,9 +145,7 @@ class ChatViewSet(  # pylint: disable=too-many-ancestors, abstract-method
         if not self.request.user.is_authenticated:
             return self.queryset.none()
 
-        if settings.ASSISTANT_RH_ENABLED:
-            require_admission(self.request.user)
-        qs = visible_conversations(self.request.user)
+        qs = visible_conversations(self.request.user, request_models(self.request))
 
         # Search results and retrieve use nested project info; post_conversation
         # needs project.llm_instructions — prefetch to avoid extra queries
@@ -251,7 +249,7 @@ class ChatViewSet(  # pylint: disable=too-many-ancestors, abstract-method
 
         conversation = self.get_object()
         if settings.ASSISTANT_RH_ENABLED:
-            allowed = configured_models(request.user)
+            allowed = configured_models(request.user, request_models(request))
             if conversation.model_hrid not in allowed or (
                 requested_model_hrid and requested_model_hrid != conversation.model_hrid
             ):

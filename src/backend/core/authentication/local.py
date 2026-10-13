@@ -1,5 +1,6 @@
 """Temporary local login using Django's password and CSRF protections."""
 
+import hashlib
 import math
 
 from django import forms
@@ -33,14 +34,17 @@ class LocalAuthenticationForm(AuthenticationForm):
 
 
 class LocalLoginThrottle(SimpleRateThrottle):
-    """Bound password attempts per peer IP using the deployment's shared cache."""
+    """Bound password attempts per submitted account using the deployment's shared cache."""
 
     rate = "10/min"
     scope = "assistant_rh_login"
 
     def get_cache_key(self, request, view):
-        # Only trust the direct peer, never a user-controlled forwarded header.
-        return self.cache_format % {"scope": self.scope, "ident": request.META["REMOTE_ADDR"]}
+        # Behind the ingress every peer is the proxy, and forwarded headers are
+        # user-controlled: an IP bucket would let anyone lock every account out.
+        account = request.POST.get("username", "").strip().lower()
+        ident = hashlib.sha256(account.encode()).hexdigest()
+        return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
 class LocalLogoutView(LogoutView):

@@ -28,6 +28,7 @@ from core.factories import UserFactory
 from core.models import MinistryGrant, User
 
 from chat.assistant_rh_delegation import DelegationAuth, delegated_model, sign_assertion
+from chat.factories import ChatConversationAttachmentFactory
 from chat.llm_configuration import LLModel, LLMProvider
 from chat.models import ChatConversation, ChatProject
 
@@ -633,3 +634,105 @@ def test_profile_update_cannot_undo_concurrent_administrative_revocation(rh, api
     assert rh.user.language == "fr-fr"
     with pytest.raises(PermissionDenied):
         sign_assertion(rh.user.pk, session_key, "matte")
+
+
+def test_grant_withdrawn_before_the_http_attempt_reports_permission_denied(
+    rh, api_client, respx_mock
+):
+    """The SDK wraps the signer's refusal; users must still see a rights error."""
+    login(api_client, rh.user)
+    chat_id = create_chat(api_client).json()["id"]
+    route = respx_mock.post("https://rh.test/v1/chat/completions").respond(500)
+    response = api_client.post(
+        BASE + f"chats/{chat_id}/conversation/",
+        {"messages": [{"id": "q", "role": "user", "parts": [{"type": "text", "text": "RH"}]}]},
+        format="json",
+    )
+    assert response.status_code == 200
+    rh.user.groups.clear()  # After the view checks, before the signed attempt.
+    body = b"".join(response.streaming_content).decode()
+    assert "permission_denied" in body and "model_connection_error" not in body
+    assert route.call_count == 0
+
+
+def test_local_login_throttle_is_per_account_not_per_proxy_address(local_account, client):
+    """Every browser shares the proxy address: one account's failures lock only it."""
+    attempt = {**local_account, "password": "wrong"}
+    for _ in range(10):
+        assert client.post(BASE + "authenticate/", attempt).status_code == 200
+    assert client.post(BASE + "authenticate/", attempt).status_code == 429
+    other = UserFactory(assistant_rh_admitted=True, admin_email="other@example.invalid")
+    other.set_password("Synthetic-passphrase-596!")
+    other.save()
+    response = client.post(
+        BASE + "authenticate/",
+        {"username": other.admin_email, "password": "Synthetic-passphrase-596!"},
+    )
+    assert response.status_code == 302
+
+
+def test_session_without_audit_nonce_is_signed_out(rh, api_client):
+    """Sessions predating RH mode cannot be delegated, so they must sign in again."""
+    session_key = login(api_client, rh.user)
+    engine = import_module(rh.settings.SESSION_ENGINE)
+    store = engine.SessionStore(session_key=session_key)
+    store.pop("assistant_rh_audit_id")
+    store.save()
+    assert api_client.get(BASE + "llm-configuration/").status_code in (401, 403)
+    assert not engine.SessionStore().exists(session_key)
+    assert api_client.get(BASE + "users/me/").status_code in (401, 403)
+
+
+def test_project_deletion_keeps_history_hidden_by_a_withdrawn_grant(rh, api_client, monkeypatch):
+    """Only visible conversations and their files go with the project."""
+    login(api_client, rh.user)
+    project = ChatProject.objects.create(owner=rh.user, title="RH", icon="folder", color="color_1")
+    visible = ChatConversation.objects.create(
+        owner=rh.user, ministry="matte", model_hrid="assistant-rh-matte", project=project
+    )
+    hidden = ChatConversation.objects.create(
+        owner=rh.user, ministry="mso", model_hrid="assistant-rh-mso", project=project
+    )
+    visible_key, hidden_key = (
+        ChatConversationAttachmentFactory(conversation=conversation, uploaded_by=rh.user).key
+        for conversation in (visible, hidden)
+    )
+    deleted_keys = set()
+    monkeypatch.setattr("chat.views.projects._bulk_delete_s3_blobs", deleted_keys.update)
+    assert api_client.delete(BASE + f"projects/{project.pk}/").status_code == 204
+    assert not ChatConversation.objects.filter(pk=visible.pk).exists()
+    hidden.refresh_from_db()
+    assert hidden.project is None
+    assert visible_key in deleted_keys and hidden_key not in deleted_keys
+    assert hidden.attachments.get().key == hidden_key
+
+
+def test_stale_full_save_cannot_undo_revocation_but_admins_can_reactivate(rh):
+    """Any stale copy keeps the database flag; an explicit change still wins."""
+    stale = User.objects.get(pk=rh.user.pk)
+    admin_copy = User.objects.get(pk=rh.user.pk)
+    admin_copy.is_active = False
+    admin_copy.save()
+    stale.language = "fr-fr"
+    stale.save()
+    current = User.objects.get(pk=rh.user.pk)
+    assert current.is_active is False and current.language == "fr-fr"
+    admin_copy.is_active = True
+    admin_copy.save()
+    assert User.objects.get(pk=rh.user.pk).is_active is True
+    stale.refresh_from_db()
+    stale.assistant_rh_admitted = False
+    stale.save()
+    assert User.objects.get(pk=rh.user.pk).assistant_rh_admitted is False
+
+
+def test_signing_key_is_cached_until_rotated(rh, api_client, tmp_path):
+    """Keys are not re-read per attempt, but an atomically replaced file is picked up."""
+    session_key = login(api_client, rh.user)
+    decode(rh, sign_assertion(rh.user.pk, session_key, "matte"))
+    rotated = Ed25519PrivateKey.generate()
+    staging = tmp_path / "rotated.pem"
+    staging.write_bytes(rotated.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+    staging.replace(rh.settings.ASSISTANT_RH_SIGNING_KEY_FILE)
+    rh.key = rotated
+    assert decode(rh, sign_assertion(rh.user.pk, session_key, "matte"))["ministry"] == "matte"

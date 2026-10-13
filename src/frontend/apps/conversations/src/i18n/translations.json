@@ -229,6 +229,7 @@
       "You have made too many requests. Please try again in {{delay}}.": "Vous avez fait trop de demandes. Veuillez réessayer dans {{delay}}.",
       "You have made too many requests. Please try again later.": "Vous avez fait trop de demandes. Veuillez réessayer plus tard.",
       "You said: ": "Vous avez dit : ",
+      "Your access rights have changed. Please reload the page.": "Vos droits d'accès ont changé. Veuillez recharger la page.",
       "Your account isn't authorized to use {{productName}}.": "Votre compte n'est pas autorisé à utiliser {{productName}}.",
       "Your chats": "Vos conversations",
       "Your document could not be processed. Please try again.": "Votre document n'a pas pu être traité. Veuillez réessayer dans quelques instants.",

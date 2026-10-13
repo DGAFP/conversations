@@ -73,6 +73,7 @@ const PROVIDER_ERROR_CODES = new Set<ChatErrorType>([
   'model_not_found',
   'model_wrong_type',
   'model_busy',
+  'permission_denied',
   'summarization_failed',
 ]);
 
@@ -132,8 +133,10 @@ export const Chat = ({
   // Update selected model when LLM config loads
   useEffect(() => {
     if (config?.ASSISTANT_RH_ENABLED && llmConfig?.models) {
-      const pinnedHrid = conversationMinistry
-        ? `assistant-rh-${conversationMinistry}`
+      // An existing conversation only ever uses its own ministry: until it is
+      // loaded, select nothing rather than the last ministry picked elsewhere.
+      const pinnedHrid = conversationId
+        ? conversationMinistry && `assistant-rh-${conversationMinistry}`
         : selectedModelHrid;
       const model =
         llmConfig.models.find((candidate) => candidate.hrid === pinnedHrid) ??

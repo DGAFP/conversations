@@ -4,6 +4,7 @@ import re
 from logging import getLogger
 
 from django.conf import settings
+from django.contrib.auth import logout
 from django.db import DatabaseError
 from django.http import JsonResponse
 from django.utils import timezone
@@ -11,7 +12,7 @@ from django.utils.deprecation import MiddlewareMixin
 
 from rest_framework.exceptions import PermissionDenied
 
-from core.assistant_rh import require_admission
+from core.assistant_rh import AUDIT_SESSION_KEY, require_admission
 from core.models import MaintenanceMode
 
 logger = getLogger(__name__)
@@ -48,8 +49,12 @@ class AssistantRHAdmissionMiddleware(MiddlewareMixin):
         if not settings.ASSISTANT_RH_ENABLED or not request.path.startswith("/api/"):
             return None
         if request.user.is_authenticated:
+            if not request.session.get(AUDIT_SESSION_KEY):
+                # Sessions opened before RH mode cannot be delegated: sign in again.
+                logout(request)
+                return None
             try:
-                require_admission(request.user)
+                require_admission(request)
             except PermissionDenied:
                 return JsonResponse({"code": "admission_required"}, status=403)
         return None

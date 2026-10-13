@@ -10,7 +10,7 @@ from django_pydantic_field.rest_framework import SchemaField  # pylint: disable=
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from core.assistant_rh import MODEL_PREFIX, configured_models
+from core.assistant_rh import MODEL_PREFIX, configured_models, request_models
 from core.file_upload.enums import AttachmentStatus, FileUploadMode
 from core.file_upload.utils import generate_upload_policy
 
@@ -98,7 +98,8 @@ class ChatConversationSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError("Le ministère est fixé à la création.")
             else:
                 hrid = attrs.get("model_hrid")
-                if hrid not in configured_models(self.context["request"].user):
+                request = self.context["request"]
+                if hrid not in configured_models(request.user, request_models(request)):
                     raise serializers.ValidationError(
                         {"model_hrid": "Choisissez un ministère autorisé."}
                     )

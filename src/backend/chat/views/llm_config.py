@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.assistant_rh import AssistantRHSessionPermission, configured_models, require_admission
+from core.assistant_rh import AssistantRHSessionPermission, configured_models, request_models
 
 from chat import serializers
 
@@ -26,10 +26,8 @@ class LLMConfigurationView(APIView):
         Returns:
             Response: A response containing the list of available LLM models.
         """
-        if settings.ASSISTANT_RH_ENABLED:
-            require_admission(request.user)
         models = (
-            configured_models(request.user).values()
+            configured_models(request.user, request_models(request)).values()
             if settings.ASSISTANT_RH_ENABLED
             else settings.LLM_CONFIGURATIONS.values()
         )

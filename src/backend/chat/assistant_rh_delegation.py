@@ -24,9 +24,45 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from rest_framework.exceptions import PermissionDenied
 
-from core.assistant_rh import MODEL_PREFIX, configured_models, current_models
+from core.assistant_rh import AUDIT_SESSION_KEY, MODEL_PREFIX, configured_models, current_models
 
 logger = logging.getLogger(__name__)
+
+_loaded_keys = {}
+
+
+def _file_version(path):
+    stat = path.stat()
+    return str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+
+def _delegation_keys():
+    """Load and validate both keys once per file version; a rotated file is reloaded."""
+    signing_path = Path(settings.ASSISTANT_RH_SIGNING_KEY_FILE)
+    audit_path = Path(settings.ASSISTANT_RH_AUDIT_KEY_FILE)
+    version = (_file_version(signing_path), _file_version(audit_path))
+    loaded = _loaded_keys.get("current")
+    if loaded is None or loaded[0] != version:
+        signing_pem = signing_path.read_bytes()
+        key = load_pem_private_key(signing_pem, password=None)
+        if not isinstance(key, Ed25519PrivateKey):
+            raise ImproperlyConfigured("Assistant RH requires an Ed25519 signing key.")
+        audit_key = audit_path.read_bytes()
+        if len(audit_key) < 32 or audit_key in (signing_pem, key.private_bytes_raw()):
+            raise ImproperlyConfigured("Assistant RH requires a separate audit key (>=32 bytes).")
+        loaded = _loaded_keys["current"] = (version, key, audit_key)
+    return loaded[1], loaded[2]
+
+
+def delegation_refused(exc):
+    """The OpenAI SDK wraps auth-flow errors as connection errors; find our refusal."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, PermissionDenied):
+            return True
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return False
 
 
 def sign_assertion(user_id, session_key, ministry=None):
@@ -44,19 +80,13 @@ def sign_assertion(user_id, session_key, ministry=None):
         user is None
         or session.get("_auth_user_id") != str(user.pk)
         or not hmac.compare_digest(session.get("_auth_user_hash", ""), user.get_session_auth_hash())
-        or not session.get("assistant_rh_audit_id")
+        or not session.get(AUDIT_SESSION_KEY)
     ):
         raise PermissionDenied("Session invalide.")
     models = current_models(user)
-    if ministry is not None and MODEL_PREFIX + ministry not in configured_models(user):
+    if ministry is not None and MODEL_PREFIX + ministry not in configured_models(user, models):
         raise PermissionDenied("Ministère non autorisé.")
-    signing_pem = Path(settings.ASSISTANT_RH_SIGNING_KEY_FILE).read_bytes()
-    key = load_pem_private_key(signing_pem, password=None)
-    if not isinstance(key, Ed25519PrivateKey):
-        raise ImproperlyConfigured("Assistant RH requires an Ed25519 signing key.")
-    audit_key = Path(settings.ASSISTANT_RH_AUDIT_KEY_FILE).read_bytes()
-    if len(audit_key) < 32 or audit_key in (signing_pem, key.private_bytes_raw()):
-        raise ImproperlyConfigured("Assistant RH requires a separate audit key (>=32 bytes).")
+    key, audit_key = _delegation_keys()
     if not settings.ASSISTANT_RH_DELEGATION_ISSUER or not settings.ASSISTANT_RH_SIGNING_KID:
         raise ImproperlyConfigured("Assistant RH delegation issuer and kid are required.")
     now = int(time.time())
@@ -69,7 +99,7 @@ def sign_assertion(user_id, session_key, ministry=None):
         "exp": now + 120,
         "jti": secrets.token_urlsafe(24),
         "audit_session": hmac.new(
-            audit_key, session["assistant_rh_audit_id"].encode(), hashlib.sha256
+            audit_key, session[AUDIT_SESSION_KEY].encode(), hashlib.sha256
         ).hexdigest(),
     }
     if ministry is not None:

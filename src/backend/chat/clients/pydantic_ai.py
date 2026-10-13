@@ -125,7 +125,6 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import Model, infer_model_profile
-from rest_framework.exceptions import PermissionDenied
 
 from core.analytics import acapture_event
 from core.feature_flags.helpers import is_feature_enabled
@@ -151,6 +150,7 @@ from chat.ai_sdk_types import (
     SourceUrlUIPart,
     UIMessage,
 )
+from chat.assistant_rh_delegation import delegation_refused
 from chat.clients.async_to_sync import convert_async_generator_to_sync
 from chat.clients.conversation_reindexer import reindex_conversation
 from chat.clients.error_classification import (
@@ -576,20 +576,20 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                 for translated in translator.translate(error_event):
                     yield self.event_encoder.encode(translated)
             except ModelAPIError as exc:
-                logger.warning(
-                    "LLM provider connection error for conversation %s: %s",
-                    self.conversation.pk,
-                    exc,
-                )
-                if messages:
-                    await self._persist_user_message_on_error(messages[-1])
-                error_event = events_v4.ErrorPart(error="model_connection_error")
+                if delegation_refused(exc):
+                    # Rights or session revoked since the request started (Assistant RH).
+                    logger.warning("Delegation refused for conversation %s", self.conversation.pk)
+                    error_event = events_v4.ErrorPart(error="permission_denied")
+                else:
+                    logger.warning(
+                        "LLM provider connection error for conversation %s: %s",
+                        self.conversation.pk,
+                        exc,
+                    )
+                    if messages:
+                        await self._persist_user_message_on_error(messages[-1])
+                    error_event = events_v4.ErrorPart(error="model_connection_error")
                 for translated in translator.translate(error_event):
-                    yield self.event_encoder.encode(translated)
-            except PermissionDenied:
-                for translated in translator.translate(
-                    events_v4.ErrorPart(error="permission_denied")
-                ):
                     yield self.event_encoder.encode(translated)
             except SummarizationRequiredError as exc:
                 logger.error(
