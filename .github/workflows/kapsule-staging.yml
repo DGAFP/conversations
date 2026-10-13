@@ -1,0 +1,95 @@
+name: Kapsule staging
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publier les images et déployer le nouveau staging Kapsule
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: kapsule-staging-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.19.0
+      - name: Validate Helm and shell
+        run: |
+          set -euo pipefail
+          bash -n deploy/kapsule/deploy.sh
+          helm lint src/helm/conversations -f deploy/kapsule/staging.yaml
+          helm template conversations src/helm/conversations -f deploy/kapsule/staging.yaml > /dev/null
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build images without credentials
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --target backend-production --build-arg DOCKER_USER=1000:1000 -f Dockerfile .
+          docker buildx build --platform linux/amd64 --target frontend-production --build-arg DOCKER_USER=1000:1000 -f src/frontend/Dockerfile .
+  publish:
+    needs: validate
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      (inputs.deploy == true || vars.KAPSULE_STAGING_CD_ENABLED == 'true')
+    environment: kapsule-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      backend: ${{ steps.images.outputs.backend }}
+      frontend: ${{ steps.images.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Authenticate to the dedicated staging registry
+        env:
+          REGISTRY_KEY: ${{ secrets.SCW_REGISTRY_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY_KEY" || { echo 'SCW_REGISTRY_SECRET_KEY missing' >&2; exit 1; }
+          printf '%s' "$REGISTRY_KEY" | docker login rg.fr-par.scw.cloud/assistant-rh-staging -u nologin --password-stdin
+      - name: Publish immutable images
+        id: images
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --target backend-production --build-arg DOCKER_USER=1000:1000 \
+            -f Dockerfile -t "rg.fr-par.scw.cloud/assistant-rh-staging/conversations-backend:sha-${GITHUB_SHA}" \
+            --push --metadata-file "$RUNNER_TEMP/backend.json" .
+          docker buildx build --platform linux/amd64 --target frontend-production --build-arg DOCKER_USER=1000:1000 \
+            -f src/frontend/Dockerfile -t "rg.fr-par.scw.cloud/assistant-rh-staging/conversations-frontend:sha-${GITHUB_SHA}" \
+            --push --metadata-file "$RUNNER_TEMP/frontend.json" .
+          echo "backend=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/backend.json")" >> "$GITHUB_OUTPUT"
+          echo "frontend=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/frontend.json")" >> "$GITHUB_OUTPUT"
+      - name: Logout
+        if: always()
+        run: docker logout rg.fr-par.scw.cloud/assistant-rh-staging
+  deploy:
+    needs: publish
+    environment: kapsule-staging
+    runs-on: [self-hosted, linux, x64, conversations-staging-deploy]
+    timeout-minutes: 20
+    concurrency:
+      group: conversations-kapsule-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Deploy and verify
+        env:
+          BACKEND_DIGEST: ${{ needs.publish.outputs.backend }}
+          FRONTEND_DIGEST: ${{ needs.publish.outputs.frontend }}
+        run: bash deploy/kapsule/deploy.sh

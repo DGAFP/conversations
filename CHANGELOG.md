@@ -10,6 +10,8 @@ and this project adheres to
 
 ### Added
 
+- 👷(ci) prepare guarded staging delivery to Scaleway Kapsule
+
 - ✨(back) add the data.gouv connector for a beta cohort
 - ✨(back) add Staan web search tool
 

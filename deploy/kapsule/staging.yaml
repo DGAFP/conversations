@@ -1,0 +1,59 @@
+# Configuration non secrète du nouveau staging Kapsule.
+fullnameOverride: conversations
+image:
+  repository: rg.fr-par.scw.cloud/assistant-rh-staging/conversations-backend
+  credentials:
+    name: scw-registry
+backend:
+  replicas: 2
+  envFrom:
+    - secretRef: {name: conversations-runtime}
+  envVars:
+    DJANGO_CONFIGURATION: Production
+    DJANGO_SETTINGS_MODULE: conversations.settings
+    DB_HOST: "10.10.1.2"
+    DB_PORT: "5432"
+    DB_NAME: conversations
+    DB_USER: conversations_app
+    PGCONNECT_TIMEOUT: "5"
+    PGSSLMODE: verify-ca
+    PGSSLROOTCERT: /etc/scaleway-ca/postgres.pem
+    LLM_CONFIGURATION_FILE_PATH: /etc/conversations-llm/config.json
+  extraVolumes:
+    - name: scaleway-ca
+      secret: {secretName: scaleway-database-ca}
+    - name: llm-config
+      configMap: {name: conversations-llm-configuration}
+  extraVolumeMounts:
+    - {name: scaleway-ca, mountPath: /etc/scaleway-ca, readOnly: true}
+    - {name: llm-config, mountPath: /etc/conversations-llm, readOnly: true}
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}
+  migrateJobAnnotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  jobs:
+    activeDeadlineSeconds: 300
+    ttlSecondsAfterFinished: 600
+    backoffLimit: 1
+  migrate:
+    command: [python, manage.py, migrate, --no-input]
+  createsuperuser:
+    enabled: false
+frontend:
+  replicas: 2
+  image:
+    repository: rg.fr-par.scw.cloud/assistant-rh-staging/conversations-frontend
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+ingress:
+  enabled: false
+  className: traefik
+  host: ""
+ingressAdmin:
+  enabled: false
+ingressMedia:
+  enabled: false

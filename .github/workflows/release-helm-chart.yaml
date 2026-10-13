@@ -3,6 +3,7 @@ run-name: Release Chart
 
 on:
   push:
+    branches: [main]
     paths:
       - src/helm/conversations/**
 
