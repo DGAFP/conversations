@@ -25,6 +25,12 @@ backend:
     ASSISTANT_RH_AUDIT_KEY_FILE: /etc/conversations-identity/audit.key
     DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,conversations-backend,conversations-backend.conversations.svc.cluster.local
     ENVIRONMENT: staging
+    LOGIN_REDIRECT_URL: "/"
+    LOGOUT_REDIRECT_URL: "/"
+    FEATURE_FLAG_DOCUMENT_UPLOAD: DISABLED
+    FEATURE_FLAG_PRESENTATION_GENERATION: DISABLED
+    FEATURE_FLAG_WEB_SEARCH: DISABLED
+    FEATURE_FLAG_DATAGOUV_CONNECTOR: DISABLED
     PGCONNECT_TIMEOUT: "5"
     PGSSLMODE: verify-ca
     PGSSLROOTCERT: /etc/scaleway-ca/postgres.pem
@@ -53,9 +59,53 @@ backend:
     ttlSecondsAfterFinished: 600
     backoffLimit: 1
   migrate:
-    command: [python, manage.py, migrate, --no-input]
+    command: [python, manage.py, migrate, --check, --no-input]
   createsuperuser:
     enabled: false
+  celeryBeat:
+    enabled: false
+  celeryWorkers:
+  - name: default
+    replicas: 1
+    command: []
+    args:
+    - celery
+    - -A
+    - conversations.celery_app
+    - worker
+    - -l
+    - INFO
+    - -n
+    - conversations@%h
+    - --concurrency=1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: '1'
+        memory: 1Gi
+    probes:
+      liveness:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - celery -A conversations.celery_app inspect ping -d conversations@$HOSTNAME
+        initialDelaySeconds: 30
+        periodSeconds: 60
+        timeoutSeconds: 15
+        failureThreshold: 3
+      readiness:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - celery -A conversations.celery_app inspect ping -d conversations@$HOSTNAME
+        initialDelaySeconds: 20
+        periodSeconds: 30
+        timeoutSeconds: 15
+        failureThreshold: 3
 frontend:
   replicas: 2
   image:

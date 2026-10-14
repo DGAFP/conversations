@@ -5,49 +5,63 @@ GitHub runners without secrets for pull requests. When enabled, it publishes to
 `rg.fr-par.scw.cloud/assistant-rh-staging` and deploys immutable image digests.
 It targets the new staging cluster only.
 
-## Activation
+## Proposed activation (not applied)
 
-The separate GitHub environment `kapsule-staging` needs
-`SCW_REGISTRY_SECRET_KEY`: a dedicated IAM application key with
-`ContainerRegistryFullAccess` on the Assistant RH project. The operator currently
-lacks IAM rights to create this identity. Do not copy the personal operator key.
-Provision the Kubernetes `scw-registry` secret with registry pull credentials.
-Application secrets must already exist in Kubernetes; do not pass them through
-Helm values, logs or GitHub artifacts.
+Pushes to `staging` will deploy automatically once
+`KAPSULE_STAGING_CD_ENABLED=true`. Until the approved activation, keep it `false`.
+The gate requires successful backend, frontend/E2E, security and Helm workflows
+for that exact push SHA. Publishing builds and scans both images before pushing;
+deployment uses the published digests and rejects obsolete staging revisions.
+No per-delivery GitHub approval is requested after initial activation.
 
-Publishing uses hosted GitHub runners. Deployment uses a dedicated private runner
-with labels `self-hosted`, `linux`, `x64`, `conversations-staging-deploy`, restricted
-to trusted repository workflows. **Never run pull request jobs on this runner.**
-Install `git`, a `node` version compatible with checkout v5, `bash`, `kubectl`, and
-Helm 3.19.0. Its kubeconfig must target exactly
-`https://fce3ddcb-b9ff-49fb-8b7d-aca605272b0a.api.k8s.fr-par.scw.cloud:6443`,
-with the cluster CA and an identity scoped to the namespace. Network egress must
-use staging gateway `51.15.255.192`, already allowed by the Kubernetes API ACL.
-No runner is registered yet. The namespace RBAC in `deploy/ci-rbac.yaml` was
-applied to staging on 2026-10-13 and its permissions were verified.
+The existing `kapsule-staging` environment is restricted to `staging` and already
+contains the dedicated registry secret. Kubernetes application, registry and CA
+secrets have been provisioned. Never pass their values through Helm or logs.
 
-Keep repository variable `KAPSULE_STAGING_CD_ENABLED=false` until all prerequisites
-are met. Then use `workflow_dispatch` with `deploy=true` for the first delivery;
-enable the variable only after validation. Manual dispatch becomes available
-once the workflow is merged into the default branch. The GitHub environment
-restricts deployment to `staging`.
+Automatic deployment uses Flux inside the existing application namespace.
+GitHub only publishes scanned images and an OCI Helm archive to the dedicated
+Scaleway registry; it has no Kubernetes access. No private GitHub runner, GitHub
+App or new Scaleway IAM permission is needed. The proposed source-controller and
+helm-controller watch only `conversations`, with namespace Roles. Helm operations
+impersonate the existing `github-deploy` service account.
 
-The script checks the exact cluster, required objects, rollout and backend health.
-Helm `--atomic` rolls back the application release on failure; **it does not undo
-database migrations**. Use backwards-compatible migrations and take a backup
-before destructive migrations. For a deliberate rollback, inspect `helm history`
-and schema compatibility before running `helm rollback` in the same namespace.
+`package-staging.py` seals Helm defaults, staging overrides and immutable image
+digests into version `0.<run_number>.<run_attempt>`, with the source SHA recorded
+as `appVersion`. Publishing this chart is the final CI action. The bundle also
+contains a read-only Helm test for backend/frontend health and public config.
+The registry already contains the required credentials; no secret enters the chart.
+
+Flux manifests are prepared under
+`assistant-rh-infra/deliveries/staging-cicd-activation-2026-10-14/flux`, not applied.
+Both OCIRepository and HelmRelease start suspended. The existing Helm release
+name, target and storage namespace are retained. The release waits for jobs and
+workload readiness; subsequent test or upgrade failures use Helm rollback remediation. The first
+adoption needs a recorded previous Helm revision and an operator rollback
+fallback because Flux does not yet have its own remediation history. The migration
+hook remains `migrate --check --no-input`; pending schema changes block delivery
+until a separately approved migration is performed.
+
+A green GitHub run proves publication; deployment is confirmed through Flux
+`Ready=True`, the expected OCI revision and successful Helm tests. To stop delivery,
+disable the CI variable and suspend the HelmRelease, including already published
+charts. Suspend Flux before an operator Helm rollback; publish a corrective chart
+before resuming. The temporary smoke users are not re-enabled automatically.
+
+Manual dispatch requires the workflow on the default branch. Initial activation
+uses a `staging` push, without merging into `main` or triggering inherited Docker
+Hub, chart or translation publishing. The proposed staging branch is created from
+main, then receives the reviewed delivery PR; subsequent changes target staging.
 
 ## Application configuration
 
 Both manual and automatic delivery target `staging`. The branch does not exist
-yet; create it from the validated main revision before activation. The Assistant RH
+yet; create it from main and integrate the reviewed delivery PR before activation. The Assistant RH
 individual identity changes have been merged into main and integrated here.
 
 The namespace and release are `conversations`. `deploy/kapsule/staging.yaml`
 disables public, admin and media Ingress until the domain and certificate are
 chosen. Before public access, configure Django hosts, CSRF and OIDC settings,
-point DNS to `51.159.113.113`, provision the TLS secret and review the new values.
+route a domain or the public IP `51.159.113.113`, provision the matching TLS certificate and review the new values.
 The frontend uses the same origin for its API (`API_ORIGIN` is empty).
 
 Prerequisites in this namespace:
@@ -77,8 +91,7 @@ Prerequisites in this namespace:
 The migration Job is a pre-install/pre-upgrade hook with a 300-second deadline.
 Its secrets, certificates and LLM ConfigMap must exist before Helm runs.
 The new staging database was initialized with all Django migrations on 2026-10-14
-using the scanned production image and verified PostgreSQL TLS. The hook remains
-responsible for future migrations. No existing user or conversation was copied.
+using the scanned production image and verified PostgreSQL TLS. The hook only checks for pending migrations; applying them requires a separate approved operation. No existing user or conversation was copied.
 Automatic superuser creation is disabled; provision the first administrator
 separately. Chart defaults preserve existing behavior for other deployments.
 
@@ -88,8 +101,7 @@ Each pull request runs Helm validation and Docker builds without publishing.
 Before publication, Trivy rejects every HIGH/CRITICAL vulnerability in each image.
 The published digest identifies the image that passed this scan.
 Before activation: verify private PostgreSQL connectivity and certificates,
-initialize the schema, verify users and grants, provision secrets and connect
-the runner, then complete a manual deployment. A heartbeat alone does not prove
+initialize the schema, verify users and grants, provision secrets, validate Flux permissions and complete the first controlled adoption. A heartbeat alone does not prove
 a real conversation: also test authentication, `/v1/models`, a streamed exchange
 and individual access controls from Conversations.
 
@@ -102,8 +114,10 @@ The inherited Helm chart publication workflow is restricted to `main`.
 Its separate `gh-pages` destination must be provisioned before publishing charts;
 Kapsule deployment uses the chart from the repository and does not require it.
 
-JIT runners are prepared by `assistant-rh-infra/scripts/start-staging-runner.py`.
-Both namespace probes passed: tools, GitHub connectivity and RBAC isolation.
-Registration occurs only for a queued staging deployment and the runner expires
-after its job. Fully automatic renewal still needs ARC and a dedicated GitHub
-App; keep `KAPSULE_STAGING_CD_ENABLED=false` until then.
+The canonical staging values include the approved runtime corrections:
+`LOGIN_REDIRECT_URL=/`, `LOGOUT_REDIRECT_URL=/`, one worker with concurrency 1,
+Celery Beat disabled, document/presentation/web/data.gouv features disabled and
+schema checking without migration. A real authenticated HTTP recipe passed on
+2026-10-14 (SSE, persisted messages, individual isolation, logout); its temporary
+accounts are now disabled. That result does not validate the future Flux controllers
+or the next image revision. No public application route is currently active.

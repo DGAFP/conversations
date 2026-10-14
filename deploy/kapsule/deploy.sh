@@ -14,5 +14,10 @@ kubectl -n "$namespace" get configmap conversations-llm-configuration -o name
 helm upgrade --install conversations src/helm/conversations -n "$namespace"   -f deploy/kapsule/staging.yaml   --set-string "image.tag=sha-${GITHUB_SHA}@${BACKEND_DIGEST}"   --set-string "frontend.image.tag=sha-${GITHUB_SHA}@${FRONTEND_DIGEST}"   --atomic --wait --wait-for-jobs --timeout 10m --history-max 10
 kubectl -n "$namespace" rollout status deployment/conversations-backend --timeout=120s
 kubectl -n "$namespace" rollout status deployment/conversations-frontend --timeout=120s
+kubectl -n "$namespace" rollout status deployment/conversations-backend-celery-default --timeout=120s
 kubectl -n "$namespace" exec deployment/conversations-backend --   python -c 'import urllib.request; r=urllib.request.urlopen("http://127.0.0.1:8000/__heartbeat__", timeout=10); assert r.status==200'
 echo "Conversations backend health: OK"
+
+# Catch missing redirects before reporting the deployment as usable.
+kubectl -n "$namespace" exec deployment/conversations-backend -- \
+  python -c 'import sys,configurations; configurations.setup(); from django.conf import settings; assert settings.LOGIN_REDIRECT_URL == settings.LOGOUT_REDIRECT_URL == "/"; sys.stdout.write("Local login/logout redirects: OK\n")'
