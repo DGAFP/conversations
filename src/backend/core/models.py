@@ -9,14 +9,20 @@ from django.conf import settings
 from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import mail, validators
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 from django.utils.translation import gettext_lazy as _
 
 from solo.models import SingletonModel
 from timezone_field import TimeZoneField
 
+from core.assistant_rh import MINISTRIES
+
 logger = getLogger(__name__)
+
+# Revoking either flag rotates the session version; stale saves must not undo it.
+ACCESS_FIELDS = ("is_active", "assistant_rh_admitted")
 
 
 class DuplicateEmailError(Exception):
@@ -161,6 +167,9 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         ),
     )
 
+    assistant_rh_admitted = models.BooleanField(default=False)
+    assistant_rh_session_version = models.UUIDField(default=uuid.uuid4, editable=False)
+
     # Application specific fields
     allow_conversation_analytics = models.BooleanField(
         _("allow conversation analytics"),
@@ -208,6 +217,68 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
     def __str__(self):
         """Return a string representation of the user."""
         return self.email or self.admin_email or str(self.id)
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if (
+            not settings.ASSISTANT_RH_ENABLED
+            or self._state.adding
+            or (update_fields is not None and not set(update_fields) & set(ACCESS_FIELDS))
+        ):
+            super().save(*args, **kwargs)
+            self.remember_access_state()
+            return
+        with transaction.atomic():
+            previous = (
+                type(self).objects.select_for_update().filter(pk=self.pk).values(*ACCESS_FIELDS)
+            ).first()
+            if previous is not None:
+                loaded = self.__dict__.get("_loaded_access", {})
+                revoked = False
+                for field in ACCESS_FIELDS:
+                    if update_fields is not None and field not in update_fields:
+                        continue
+                    # A copy that never changed this flag must not undo a concurrent
+                    # administrative revocation (or reactivation).
+                    if field in loaded and getattr(self, field) == loaded[field]:
+                        setattr(self, field, previous[field])
+                    revoked |= previous[field] and not getattr(self, field)
+                if revoked:
+                    self.assistant_rh_session_version = uuid.uuid4()
+                    if update_fields is not None:
+                        kwargs["update_fields"] = set(update_fields) | {
+                            "assistant_rh_session_version"
+                        }
+            super().save(*args, **kwargs)
+        self.remember_access_state()
+
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        cls.remember_access_state(instance)
+        return instance
+
+    def refresh_from_db(self, using=None, fields=None, from_queryset=None):
+        super().refresh_from_db(using=using, fields=fields, from_queryset=from_queryset)
+        self.remember_access_state(fields)
+
+    def remember_access_state(self, fields=None):
+        """Record access flags as read from the database, to tell edits from stale copies."""
+        loaded = self.__dict__.setdefault("_loaded_access", {})
+        for field in ACCESS_FIELDS:
+            if field in self.__dict__ and (fields is None or field in fields):
+                loaded[field] = self.__dict__[field]
+
+    def _get_session_auth_hash(self, secret=None):
+        original = super()._get_session_auth_hash(secret=secret)
+        if not settings.ASSISTANT_RH_ENABLED:
+            return original
+        return salted_hmac(
+            "core.User.assistant_rh_session",
+            original + str(self.assistant_rh_session_version),
+            secret=secret,
+            algorithm="sha256",
+        ).hexdigest()
 
     def email_user(self, subject, message, from_email=None, **kwargs):
         """Email this user."""
@@ -487,3 +558,22 @@ class ChatCooldownSettings(SingletonModel):
 
     class Meta:  # pylint: disable=missing-class-docstring
         verbose_name = "Chat Cooldown Settings"
+
+
+class MinistryGrant(models.Model):
+    """A logical corpus entitlement; no inference-provider identity is stored here."""
+
+    group = models.ForeignKey(
+        "auth.Group", on_delete=models.CASCADE, related_name="assistant_rh_grants"
+    )
+    ministry = models.CharField(max_length=10, choices=[(m, m.upper()) for m in MINISTRIES])
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "ministry"], name="assistant_rh_group_ministry_unique"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.group}: {self.ministry}"

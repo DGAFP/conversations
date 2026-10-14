@@ -12,12 +12,18 @@ from django.utils.module_loading import import_string
 
 import langfuse
 from drf_spectacular.utils import extend_schema
-from rest_framework import decorators, filters, mixins, permissions, status, viewsets
+from rest_framework import decorators, filters, mixins, status, viewsets
 from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.api.viewsets import Pagination, SerializerPerActionMixin
+from core.assistant_rh import (
+    AssistantRHSessionPermission,
+    configured_models,
+    request_models,
+    visible_conversations,
+)
 from core.file_upload.enums import AttachmentStatus
 from core.file_upload.mixins import AttachmentMixin
 
@@ -60,7 +66,7 @@ class ChatAttachmentMixin(AttachmentMixin):  # pylint: disable=abstract-method
         The holder pk in the media URL can be either a conversation or a project.
         Raises PermissionDenied if the user does not have permission.
         """
-        if not user.is_authenticated:
+        if settings.ASSISTANT_RH_ENABLED or not user.is_authenticated:
             raise PermissionDenied()
 
         holder_pk = url_params["pk"]
@@ -103,7 +109,7 @@ class ChatViewSet(  # pylint: disable=too-many-ancestors, abstract-method
     """
 
     pagination_class = Pagination
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AssistantRHSessionPermission]
     serializer_class = serializers.ChatConversationSerializer
     post_conversation_serializer_class = serializers.ChatConversationInputSerializer
     filter_backends = [filters.OrderingFilter, TitleSearchFilter, ProjectFilter]
@@ -139,7 +145,7 @@ class ChatViewSet(  # pylint: disable=too-many-ancestors, abstract-method
         if not self.request.user.is_authenticated:
             return self.queryset.none()
 
-        qs = self.queryset.filter(owner=self.request.user)
+        qs = visible_conversations(self.request.user, request_models(self.request))
 
         # Search results and retrieve use nested project info; post_conversation
         # needs project.llm_instructions — prefetch to avoid extra queries
@@ -242,6 +248,12 @@ class ChatViewSet(  # pylint: disable=too-many-ancestors, abstract-method
         )
 
         conversation = self.get_object()
+        if settings.ASSISTANT_RH_ENABLED:
+            allowed = configured_models(request.user, request_models(request))
+            if conversation.model_hrid not in allowed or (
+                requested_model_hrid and requested_model_hrid != conversation.model_hrid
+            ):
+                raise PermissionDenied("Ministère non autorisé ou différent de la conversation.")
 
         # Refuse the message while a project file is still being malware-scanned:
         # its content must not reach the model before the scan clears it. Only
@@ -382,12 +394,15 @@ class ChatViewSet(  # pylint: disable=too-many-ancestors, abstract-method
         """
         conversation = self.get_object()
 
-        AIAgentService(
-            conversation=conversation,
-            user=self.request.user,
-            model_hrid=None,  # model_hrid is not needed to stop streaming
-            language=None,  # language is not needed to stop streaming
-        ).stop_streaming()
+        if settings.ASSISTANT_RH_ENABLED:
+            AIAgentService.stop_conversation(conversation)
+        else:
+            AIAgentService(
+                conversation=conversation,
+                user=self.request.user,
+                model_hrid=None,
+                language=None,
+            ).stop_streaming()
 
         return Response({"status": "OK"}, status=status.HTTP_200_OK)
 
@@ -414,6 +429,8 @@ class ChatViewSet(  # pylint: disable=too-many-ancestors, abstract-method
             Response: A response indicating that the message has been scored.
         """
         _conversation = self.get_object()  # only to check permissions
+        if settings.ASSISTANT_RH_ENABLED:
+            raise PermissionDenied("Évaluation Assistant RH à raccorder (#595).")
 
         serializer = serializers.ChatMessageCategoricalScoreSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -444,7 +461,7 @@ class ChatCooldownView(APIView):
     or when switching conversations, sourced from the authoritative cache value.
     """
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AssistantRHSessionPermission]
 
     def get(self, request):
         """Return the seconds the user must still wait before sending again."""

@@ -150,6 +150,7 @@ from chat.ai_sdk_types import (
     SourceUrlUIPart,
     UIMessage,
 )
+from chat.assistant_rh_delegation import delegation_refused
 from chat.clients.async_to_sync import convert_async_generator_to_sync
 from chat.clients.conversation_reindexer import reindex_conversation
 from chat.clients.error_classification import (
@@ -318,7 +319,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         # cleared at the start of every stream via _clean.
         self._pre_stream_events: List[dict] = []
 
-        self._langfuse_available = settings.LANGFUSE_ENABLED
+        self._langfuse_available = settings.LANGFUSE_ENABLED and not settings.ASSISTANT_RH_ENABLED
         self._store_analytics = self._langfuse_available and user.allow_conversation_analytics
         self._langfuse_span = None
         self.event_encoder = EventEncoder(CURRENT_EVENT_ENCODER_VERSION)
@@ -340,6 +341,12 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         self._is_smart_search_enabled = user.allow_smart_web_search
         self._connector_toolsets = get_mcp_toolsets(self.user)
         self._fake_streaming_delay = settings.FAKE_STREAMING_DELAY
+        if settings.ASSISTANT_RH_ENABLED:
+            self._is_document_upload_enabled = False
+            self._is_web_search_enabled = False
+            self._is_presentation_generation_enabled = False
+            self._is_smart_search_enabled = False
+            self._connector_toolsets = []
 
         self._context_deps = ContextDeps(
             conversation=conversation,
@@ -375,8 +382,14 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
             language=self.language,
             capabilities=_capabilities,
             deps_type=ContextDeps,
+            delegation_context=(
+                (user.pk, session.session_key if session else None, conversation.ministry)
+                if settings.ASSISTANT_RH_ENABLED
+                else None
+            ),
         )
-        add_document_rag_search_tool_from_setting(self.conversation_agent, self.user)
+        if not settings.ASSISTANT_RH_ENABLED:
+            add_document_rag_search_tool_from_setting(self.conversation_agent, self.user)
         self._conversation_message_token_budget = resolve_conversation_budget(
             self.model_configuration
         )
@@ -420,8 +433,13 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
 
         This method is a placeholder for stopping the streaming operation.
         """
-        logger.info("Stopping streaming for conversation %s", self.conversation.id)
-        cache.set(self._stop_cache_key, "1", timeout=CACHE_TIMEOUT)
+        self.stop_conversation(self.conversation)
+
+    @staticmethod
+    def stop_conversation(conversation):
+        """Signal cancellation without constructing a model or issuing delegation."""
+        logger.info("Stopping streaming for conversation %s", conversation.pk)
+        cache.set(f"streaming:stop:{conversation.pk}", "1", timeout=CACHE_TIMEOUT)
 
     # --------------------------------------------------------------------- #
     # Async internals
@@ -558,14 +576,19 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                 for translated in translator.translate(error_event):
                     yield self.event_encoder.encode(translated)
             except ModelAPIError as exc:
-                logger.warning(
-                    "LLM provider connection error for conversation %s: %s",
-                    self.conversation.pk,
-                    exc,
-                )
-                if messages:
-                    await self._persist_user_message_on_error(messages[-1])
-                error_event = events_v4.ErrorPart(error="model_connection_error")
+                if delegation_refused(exc):
+                    # Rights or session revoked since the request started (Assistant RH).
+                    logger.warning("Delegation refused for conversation %s", self.conversation.pk)
+                    error_event = events_v4.ErrorPart(error="permission_denied")
+                else:
+                    logger.warning(
+                        "LLM provider connection error for conversation %s: %s",
+                        self.conversation.pk,
+                        exc,
+                    )
+                    if messages:
+                        await self._persist_user_message_on_error(messages[-1])
+                    error_event = events_v4.ErrorPart(error="model_connection_error")
                 for translated in translator.translate(error_event):
                     yield self.event_encoder.encode(translated)
             except SummarizationRequiredError as exc:
@@ -587,8 +610,12 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
     async def stream_data_async(self, messages: List[UIMessage], force_web_search: bool = False):
         """Return Vercel-AI-SDK formatted events."""
 
-        async for chunk in self._stream_content(messages, force_web_search):
-            yield chunk
+        try:
+            async for chunk in self._stream_content(messages, force_web_search):
+                yield chunk
+        finally:
+            if settings.ASSISTANT_RH_ENABLED:
+                await self.conversation_agent.model.client.close()
 
     async def _agent_stop_streaming(self, force_cache_check: Optional[bool] = False) -> None:
         """Check if the agent should stop streaming."""
@@ -828,6 +855,10 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         with degraded context. Always trims the history and yields the result as
         the final item (the `DocumentParsingResult` sentinel pattern).
         """
+        if settings.ASSISTANT_RH_ENABLED:
+            yield PreparedHistory(history=self._build_model_history(history))
+            return
+
         should_emit_summary_event = should_generate_conversation_summary(
             history,
             summary_checkpoint=self._history_summary_checkpoint,
@@ -1363,7 +1394,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
 
     def _setup_self_documentation_tool(self) -> None:
         """Register a tool exposing static and runtime self-documentation metadata."""
-        if self._self_documentation_tool_registered:
+        if settings.ASSISTANT_RH_ENABLED or self._self_documentation_tool_registered:
             return
 
         @self.conversation_agent.instructions
@@ -1938,6 +1969,8 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
             f"Conversation:\n{context}"
         )
         try:
+            if settings.ASSISTANT_RH_ENABLED:
+                return None  # Keep the title from the first question; no separate inference.
             agent = TitleGenerationAgent()
             result = await agent.run(prompt)
             title = (result.output or "").strip()[:100]  # Enforce max length (conversation.title)

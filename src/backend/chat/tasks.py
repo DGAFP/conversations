@@ -107,6 +107,9 @@ def summarize_conversation_history(conversation_id: str) -> None:
     and persists behind the checkpoint guard. The claim is always released:
     a retry re-claims, and the re-check makes stale retries no-ops.
     """
+    if settings.ASSISTANT_RH_ENABLED:
+        return
+
     try:
         conversation = ChatConversation.objects.get(pk=conversation_id)
     except ChatConversation.DoesNotExist:

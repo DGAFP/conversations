@@ -16,6 +16,7 @@ export type ChatErrorType =
   | 'model_not_found'
   | 'model_wrong_type'
   | 'model_busy'
+  | 'permission_denied'
   | 'summarization_failed';
 
 interface ChatErrorProps {
