@@ -73,6 +73,7 @@ const PROVIDER_ERROR_CODES = new Set<ChatErrorType>([
   'model_not_found',
   'model_wrong_type',
   'model_busy',
+  'permission_denied',
   'summarization_failed',
 ]);
 
@@ -112,6 +113,9 @@ export const Chat = ({
   const [selectedModel, setSelectedModel] = useState<LLMModel | null>(null);
 
   const [conversationId, setConversationId] = useState(initialConversationId);
+  const [conversationMinistry, setConversationMinistry] = useState<
+    string | null
+  >(null);
   const apiUrl = conversationId
     ? `chats/${conversationId}/conversation/`
     : 'chats/conversation/';
@@ -128,6 +132,23 @@ export const Chat = ({
 
   // Update selected model when LLM config loads
   useEffect(() => {
+    if (config?.ASSISTANT_RH_ENABLED && llmConfig?.models) {
+      // An existing conversation only ever uses its own ministry: until it is
+      // loaded, select nothing rather than the last ministry picked elsewhere.
+      const pinnedHrid = conversationId
+        ? conversationMinistry && `assistant-rh-${conversationMinistry}`
+        : selectedModelHrid;
+      const model =
+        llmConfig.models.find((candidate) => candidate.hrid === pinnedHrid) ??
+        (!conversationId ? llmConfig.models[0] : undefined);
+      if (model?.hrid !== selectedModel?.hrid) {
+        setSelectedModel(model ?? null);
+      }
+      if (model && model.hrid !== selectedModelHrid) {
+        setSelectedModelHrid(model.hrid);
+      }
+      return;
+    }
     if (llmConfig?.models && !selectedModel) {
       let modelToSelect: LLMModel | undefined;
 
@@ -149,7 +170,15 @@ export const Chat = ({
         setSelectedModelHrid(modelToSelect.hrid);
       }
     }
-  }, [llmConfig, selectedModel, selectedModelHrid, setSelectedModelHrid]);
+  }, [
+    llmConfig,
+    selectedModel,
+    selectedModelHrid,
+    setSelectedModelHrid,
+    config?.ASSISTANT_RH_ENABLED,
+    conversationMinistry,
+    conversationId,
+  ]);
 
   const handleModelSelect = (model: LLMModel) => {
     setSelectedModel(model);
@@ -721,6 +750,7 @@ export const Chat = ({
     setConversationId(initialConversationId);
     // Reset input when conversation changes
     if (initialConversationId !== conversationId) {
+      setConversationMinistry(null);
       setInput('');
       setHasInitialized(false); // Réinitialiser pour permettre le scroll au prochain chargement
     }
@@ -830,6 +860,7 @@ export const Chat = ({
             if (!hasSentRef.current) {
               setMessages(conversation.messages);
             }
+            setConversationMinistry(conversation.ministry ?? null);
             setImagesSkipped(conversation.images_skipped ?? false);
             setConversationProjectId(conversation.project?.id ?? null);
             setHasInitialized(true);
@@ -991,6 +1022,7 @@ export const Chat = ({
         {
           title: input.length > 100 ? `${input.slice(0, 97)}...` : input,
           ...(pendingProjectId && { project: pendingProjectId }),
+          ...(selectedModel && { model_hrid: selectedModel.hrid }),
         },
         {
           onSuccess: (data) => {
@@ -1000,6 +1032,7 @@ export const Chat = ({
             // is skipped while the pending first message is in flight).
             setConversationProjectId(pendingProjectId ?? null);
             setProjectId(null);
+            setConversationMinistry(data.ministry ?? null);
             setConversationId(data.id);
             // Update the URL to /chat/<id>
             void navigate(`/chat/${data.id}`);
@@ -1211,7 +1244,11 @@ export const Chat = ({
           forceWebSearch={forceWebSearch}
           onToggleWebSearch={toggleWebSearch}
           selectedModel={selectedModel}
-          onModelSelect={handleModelSelect}
+          onModelSelect={
+            config?.ASSISTANT_RH_ENABLED && conversationId
+              ? undefined
+              : handleModelSelect
+          }
           isUploadingFiles={isUploadingFiles}
           isIndexingFiles={isIndexingFiles}
           failedIndexingCount={failedIndexingIds.length}

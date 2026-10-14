@@ -48,6 +48,8 @@ export interface ConfigResponse {
   POSTHOG_KEY?: PostHogConf;
   SENTRY_DSN?: string;
   FILE_UPLOAD_MODE?: string;
+  ASSISTANT_RH_ENABLED?: boolean;
+  ASSISTANT_RH_LOCAL_LOGIN_ENABLED?: boolean;
   FRONTEND_SILENT_LOGIN_ENABLED?: boolean;
   theme_customization?: ThemeCustomization;
   status_banner?: StatusBanner;

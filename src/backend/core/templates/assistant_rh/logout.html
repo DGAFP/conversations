@@ -1,0 +1,9 @@
+{% extends "assistant_rh/base.html" %}
+{% block title %}Déconnexion — Assistant RH{% endblock %}
+{% block content %}
+<h1>Se déconnecter</h1>
+<form method="post">
+  {% csrf_token %}
+  <button type="submit">Confirmer la déconnexion</button>
+</form>
+{% endblock %}

@@ -9,6 +9,7 @@ export interface ChatConversationProject {
 }
 
 export interface ChatConversation {
+  ministry?: string;
   id: string;
   messages: ChatMessage[];
   created_at: string;

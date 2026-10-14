@@ -13,6 +13,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import AllowAny
 
 from core import models, permissions
+from core.authentication.local import local_login_enabled
 from core.middleware import is_maintenance_active
 
 from . import serializers
@@ -140,6 +141,7 @@ class ConfigView(drf.views.APIView):
             Return a dictionary of public settings.
         """
         array_settings = [
+            "ASSISTANT_RH_ENABLED",
             "STATUS_PAGE_URL",
             "ENVIRONMENT",
             "FRONTEND_CSS_URL",
@@ -164,6 +166,10 @@ class ConfigView(drf.views.APIView):
             else:
                 dict_settings[setting] = getattr(settings, setting)
 
+        dict_settings["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] = local_login_enabled()
+        if dict_settings["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"]:
+            # Also covers runtime toggles, which never re-run the settings setup().
+            dict_settings["FRONTEND_SILENT_LOGIN_ENABLED"] = False
         dict_settings["theme_customization"] = self._load_theme_customization()
 
         dict_settings["chat_upload_accept"] = ",".join(settings.RAG_FILES_ACCEPTED_FORMATS)

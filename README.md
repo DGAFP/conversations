@@ -222,3 +222,7 @@ Conversations is built on top of [Django Rest Framework](https://www.django-rest
 <p align="center">
   <img src="/docs/assets/europe_opensource.png" width="50%"/>
 </p>
+
+## Assistant RH fork
+
+Configuration, admission and corpus access: [identity runbook](docs/assistant-rh/identity.md).

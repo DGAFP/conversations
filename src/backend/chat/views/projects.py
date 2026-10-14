@@ -6,10 +6,15 @@ from django.conf import settings
 from django.db.models import Prefetch, Q
 from django.utils.module_loading import import_string
 
-from rest_framework import filters, permissions, viewsets
+from rest_framework import filters, viewsets
 
 from core.analytics import capture_event
 from core.api.viewsets import Pagination
+from core.assistant_rh import (
+    AssistantRHSessionPermission,
+    request_models,
+    visible_conversations,
+)
 
 from chat import models, serializers
 from chat.rate_limiting import ProjectCreateDailyThrottle, ProjectCreateHourlyThrottle
@@ -23,7 +28,7 @@ class ChatProjectViewSet(viewsets.ModelViewSet):  # pylint: disable=too-many-anc
     """ViewSet for managing projects."""
 
     pagination_class = Pagination
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AssistantRHSessionPermission]
     ordering = ["title"]
     ordering_fields = ["title", "created_at", "updated_at"]
     queryset = models.ChatProject.objects
@@ -35,7 +40,9 @@ class ChatProjectViewSet(viewsets.ModelViewSet):  # pylint: disable=too-many-anc
 
         conversations_prefetch = Prefetch(  # Prefetch conversations ordered by most recent first
             "conversations",
-            queryset=models.ChatConversation.objects.order_by("-created_at"),
+            queryset=visible_conversations(
+                self.request.user, request_models(self.request)
+            ).order_by("-created_at"),
         )
         return (
             self.queryset.filter(owner=self.request.user).prefetch_related(conversations_prefetch)
@@ -90,6 +97,16 @@ class ChatProjectViewSet(viewsets.ModelViewSet):  # pylint: disable=too-many-anc
         attachment rows without touching object storage. Markdown companions
         share their key with the original, so unique keys are deduplicated.
         """
+        if settings.ASSISTANT_RH_ENABLED:
+            # History hidden by a withdrawn grant is not the user's to delete with the
+            # project: detach it (and its files) so restoring the grant brings it back.
+            # Not `instance.conversations`: get_queryset prefetches only visible ones.
+            models.ChatConversation.objects.filter(project=instance).exclude(
+                pk__in=visible_conversations(
+                    self.request.user, request_models(self.request)
+                ).values("pk")
+            ).update(project=None)
+
         # Same NULL-or-empty handling as ChatProjectAttachmentViewSet.get_queryset:
         # collection_id is CharField(null=True, blank=True), so both states exist.
         conversations_with_collection = instance.conversations.exclude(

@@ -10,13 +10,18 @@ import { KEY_LIST_PROJECT } from './useProjects';
 interface ChatConversationParams {
   title: string;
   project?: string;
+  model_hrid?: string;
 }
 
 export const createChatConversation = async ({
   title,
   project,
+  model_hrid,
 }: ChatConversationParams): Promise<ChatConversation> => {
   const body: Record<string, string> = { title };
+  if (model_hrid) {
+    body.model_hrid = model_hrid;
+  }
   if (project) {
     body.project = project;
   }

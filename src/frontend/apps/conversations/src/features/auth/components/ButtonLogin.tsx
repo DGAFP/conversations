@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { css } from 'styled-components';
 
 import { BoxButton, Icon } from '@/components';
+import { useConfig } from '@/core';
 import { useResponsiveStore } from '@/stores';
 
 import ProConnectImg from '../assets/button-proconnect.svg?react';
@@ -44,6 +45,11 @@ export const ButtonLogin = () => {
 
 export const ProConnectButton = () => {
   const { t } = useTranslation();
+  const { data: config } = useConfig();
+
+  if (config?.ASSISTANT_RH_LOCAL_LOGIN_ENABLED) {
+    return <Button onClick={() => gotoLogin()}>{t('Login')}</Button>;
+  }
 
   return (
     <BoxButton

@@ -156,7 +156,9 @@ export const ModalProjectForm = ({
   const { colorsTokens } = useCunninghamTheme();
 
   const { data: conf } = useConfig();
-  const fileUploadEnabled = useFeatureEnabled('document-upload');
+  const documentUploadFeature = useFeatureEnabled('document-upload');
+  const fileUploadEnabled =
+    documentUploadFeature && !conf?.ASSISTANT_RH_ENABLED;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: existingAttachments } = useProjectAttachments(project?.id);

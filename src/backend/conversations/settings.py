@@ -33,6 +33,7 @@ from core.file_upload.enums import FileToLLMMode, FileUploadMode
 
 from chat import prompts
 from chat.llm_configuration import cached_load_llm_configuration, load_llm_configuration
+from conversations.assistant_rh_settings import AssistantRHSettings
 from conversations.brave_settings import BraveSettings
 from conversations.celery_settings import CelerySettings
 from conversations.observability_settings import ObservabilitySettings
@@ -57,6 +58,7 @@ def get_release():
 
 
 class Base(
+    AssistantRHSettings,
     BraveSettings,
     StaanSettings,
     CelerySettings,
@@ -303,6 +305,7 @@ class Base(
         "django.middleware.common.CommonMiddleware",
         "django.middleware.csrf.CsrfViewMiddleware",
         "django.contrib.auth.middleware.AuthenticationMiddleware",
+        "core.middleware.AssistantRHAdmissionMiddleware",
         "posthog.integrations.django.PosthogContextMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
         "dockerflow.django.middleware.DockerflowMiddleware",
