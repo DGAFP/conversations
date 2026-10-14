@@ -8,14 +8,19 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
-- Add individual admission, current group corpus grants and signed API delegation.
+- Add individual admission, current group corpus grants and signed API
+  delegation.
 - Keep conversation ministry fixed and hide history when access is withdrawn.
-- Add opt-in local password login before OIDC setup, preserving admission and corpus grants.
-- Report revoked delegation as a rights error, throttle local login per account and sign out sessions without an audit nonce.
+- Add opt-in local password login before OIDC setup, preserving admission
+  and corpus grants.
+- Report revoked delegation as a rights error, throttle local login per
+  account and sign out sessions without an audit nonce.
 
 ## [Unreleased]
 
 ### Added
+
+- 👷(ci) prepare guarded staging delivery to Scaleway Kapsule
 
 - ✨(back) add the data.gouv connector for a beta cohort
 - ✨(back) add Staan web search tool
@@ -27,6 +32,12 @@ and this project adheres to
 - ⬆️(dependencies) update front and mail dependencies and remove unused ones
 
 ### Fixed
+
+- 🐛(back) preserve permission-denied events after the OpenAI SDK update
+- 🐛(tests) support HTTPX2 mocks and preserve asyncio clocks during frozen-time
+  streaming tests after the Pydantic AI security update
+
+- 🔒️(dependencies) update packages flagged by the staging security scan
 
 - ✅(back) make the project list query counts independent of test order
 - 👷(ci) pull the MinIO images from quay.io instead of Docker Hub

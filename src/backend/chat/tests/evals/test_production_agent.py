@@ -21,6 +21,7 @@ from chat.evals.production_agent import (
 )
 from chat.factories import ChatConversationFactory, UserFactory
 from chat.llm_configuration import LLModel, LLMProvider, LLMSettings
+from chat.tests.utils import agent_instructions
 from chat.tools.descriptions import (
     DOCUMENT_SEARCH_RAG_SYSTEM_PROMPT,
     DOCUMENT_SEARCH_RAG_TOOL_DESCRIPTION,
@@ -68,7 +69,7 @@ def ai_settings_fixture(settings):
 
 def _instruction_texts(agent) -> list[str]:
     texts = []
-    for instruction in agent._instructions:
+    for instruction in agent_instructions(agent):
         texts.append(instruction() if callable(instruction) else instruction)
     return texts
 

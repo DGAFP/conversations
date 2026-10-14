@@ -8,6 +8,7 @@ from pydantic_ai.models.test import TestModel
 from chat.clients.pydantic_ai import AIAgentService
 from chat.factories import ChatConversationFactory, UserFactory
 from chat.llm_configuration import LLModel, LLMProvider
+from chat.tests.utils import agent_instructions
 
 pytestmark = pytest.mark.django_db()
 
@@ -93,7 +94,7 @@ def test_force_websearch_overrides_smart_search_disabled(_llm_config_with_websea
     assert service._context_deps.web_search_enabled is True
     assert any(
         callable(instr) and "web_search" in instr()
-        for instr in service.conversation_agent._instructions
+        for instr in agent_instructions(service.conversation_agent)
     )
     with service.conversation_agent.override(model=TestModel(), deps=service._context_deps):
         response = service.conversation_agent.run_sync("Search the web for something.")

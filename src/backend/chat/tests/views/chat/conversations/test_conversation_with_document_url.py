@@ -144,7 +144,7 @@ def fixture_sample_document_content():
 
 
 @respx.mock
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_local_pdf_document_url(
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     api_client,
@@ -295,6 +295,7 @@ def test_post_conversation_with_local_pdf_document_url(
             "timestamp": timestamp,
         },
         {
+            "workspace_ref": None,
             "conversation_id": ANY,
             "finish_reason": None,
             "kind": "response",
@@ -316,6 +317,8 @@ def test_post_conversation_with_local_pdf_document_url(
             "state": "complete",
             "timestamp": timestamp,
             "usage": {
+                "audio_seconds": 0.0,
+                "cost": None,
                 "cache_audio_read_tokens": 0,
                 "cache_read_tokens": 0,
                 "cache_write_tokens": 0,
@@ -330,7 +333,7 @@ def test_post_conversation_with_local_pdf_document_url(
     ]
 
 
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_local_document_wrong_url(
     api_client,
     mock_ai_agent_service,
@@ -396,7 +399,7 @@ def test_post_conversation_with_local_document_wrong_url(
     assert len(chat_conversation.messages) == 0
 
 
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_remote_document_url(
     api_client,
     mock_ai_agent_service,
@@ -462,7 +465,7 @@ def test_post_conversation_with_remote_document_url(
     assert len(chat_conversation.messages) == 0
 
 
-@freeze_time("2025-10-18T20:48:20.286204Z")
+@freeze_time("2025-10-18T20:48:20.286204Z", real_asyncio=True)
 def test_post_conversation_with_local_document_url_in_history(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     api_client,
     mock_ai_agent_service,
@@ -533,6 +536,7 @@ def test_post_conversation_with_local_document_url_in_history(  # pylint: disabl
                 ],
             },
             {
+                "workspace_ref": None,
                 "finish_reason": None,
                 "kind": "response",
                 "model_name": "function::agent_model",
@@ -548,6 +552,8 @@ def test_post_conversation_with_local_document_url_in_history(  # pylint: disabl
                 "provider_response_id": None,
                 "timestamp": "2025-10-18T20:48:20.286204Z",
                 "usage": {
+                    "audio_seconds": 0.0,
+                    "cost": None,
                     "cache_audio_read_tokens": 0,
                     "cache_read_tokens": 0,
                     "cache_write_tokens": 0,
@@ -732,6 +738,7 @@ def test_post_conversation_with_local_document_url_in_history(  # pylint: disabl
             # no run_id here
         },
         {
+            "workspace_ref": None,
             "finish_reason": None,
             "kind": "response",
             "model_name": "function::agent_model",
@@ -747,6 +754,8 @@ def test_post_conversation_with_local_document_url_in_history(  # pylint: disabl
             "provider_response_id": None,
             "timestamp": "2025-10-18T20:48:20.286204Z",
             "usage": {
+                "audio_seconds": 0.0,
+                "cost": None,
                 "cache_audio_read_tokens": 0,
                 "cache_read_tokens": 0,
                 "cache_write_tokens": 0,
@@ -775,6 +784,7 @@ def test_post_conversation_with_local_document_url_in_history(  # pylint: disabl
             "timestamp": "2025-10-18T20:48:20.286204Z",
         },
         {
+            "workspace_ref": None,
             "conversation_id": ANY,
             "finish_reason": None,
             "kind": "response",
@@ -796,6 +806,8 @@ def test_post_conversation_with_local_document_url_in_history(  # pylint: disabl
             "state": "complete",
             "timestamp": "2025-10-18T20:48:20.286204Z",
             "usage": {
+                "audio_seconds": 0.0,
+                "cost": None,
                 "cache_audio_read_tokens": 0,
                 "cache_read_tokens": 0,
                 "cache_write_tokens": 0,
@@ -811,7 +823,7 @@ def test_post_conversation_with_local_document_url_in_history(  # pylint: disabl
 
 
 @respx.mock
-@freeze_time()
+@freeze_time(real_asyncio=True)
 @pytest.mark.parametrize(
     "file_name,content_type",
     [
@@ -977,6 +989,7 @@ def test_post_conversation_with_local_not_pdf_document_url(
             "timestamp": timestamp,
         },
         {
+            "workspace_ref": None,
             "conversation_id": ANY,
             "finish_reason": None,
             "kind": "response",
@@ -998,6 +1011,8 @@ def test_post_conversation_with_local_not_pdf_document_url(
             "state": "complete",
             "timestamp": timestamp,
             "usage": {
+                "audio_seconds": 0.0,
+                "cost": None,
                 "cache_audio_read_tokens": 0,
                 "cache_read_tokens": 0,
                 "cache_write_tokens": 0,

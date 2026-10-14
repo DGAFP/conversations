@@ -1,5 +1,7 @@
 [codespell]
 skip =
+    # French operational documentation is outside the English dictionary.
+    ./docs/assistant-rh/identity.md,
     ./git/,
     **/*.pdf,
     **/*.po,
@@ -14,6 +16,11 @@ skip =
     ./src/backend/chat/evals,
 check-filenames = true
 ignore-words-list =
+    # French authentication messages.
+    adresse,
+    connexion,
+    invalide,
+    mot,
     afterAll,
     projet,
     statics,

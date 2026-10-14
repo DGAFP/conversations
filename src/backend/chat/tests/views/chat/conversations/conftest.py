@@ -77,7 +77,7 @@ def _create_mock_openai_route(with_delays: bool = False, delay_seconds: float = 
 
 
 @pytest.fixture(name="mock_openai_stream")
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def fixture_mock_openai_stream():
     """
     Fixture to mock the OpenAI stream response (no delays).
@@ -88,7 +88,7 @@ def fixture_mock_openai_stream():
 
 
 @pytest.fixture(name="mock_openai_stream_multi_calls")
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def fixture_mock_openai_stream_multi_calls():
     """
     Mock the Albert OpenAI-compatible streaming response with CO2 impact data.
@@ -122,7 +122,7 @@ def fixture_mock_openai_stream_slow():
 
 
 @pytest.fixture(name="mock_openai_stream_with_title_generation")
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def fixture_mock_openai_stream_with_title_generation():
     """
     Fixture to mock the OpenAI stream response.
@@ -198,7 +198,7 @@ def fixture_mock_openai_stream_with_title_generation():
 
 
 @pytest.fixture(name="mock_openai_no_stream")
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def fixture_mock_openai_no_stream():
     """Fixture to mock the OpenAI response."""
 
@@ -277,7 +277,7 @@ def fixture_mock_openai_no_stream():
 
 
 @pytest.fixture(name="mock_openai_stream_image")
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def fixture_mock_openai_stream_image():
     """
     Mock a very simple OpenAI stream that *mentions* the image
@@ -336,7 +336,7 @@ def fixture_mock_openai_stream_image():
 
 
 @pytest.fixture(name="mock_openai_stream_tool")
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def fixture_mock_openai_stream_tool():
     """
     Mock both API calls in the tool call flow:
