@@ -15,16 +15,30 @@ backend:
     DB_PORT: "5432"
     DB_NAME: conversations
     DB_USER: conversations_app
+    ASSISTANT_RH_ENABLED: "true"
+    ASSISTANT_RH_LOCAL_LOGIN_ENABLED: "true"
+    ASSISTANT_RH_API_URL: http://assistant-rh-api.assistant-rh-api.svc.cluster.local:8000/v1
+    ASSISTANT_RH_DELEGATION_ISSUER: urn:assistant-rh:conversations:staging
+    ASSISTANT_RH_API_AUDIENCE: assistant-rh-api
+    ASSISTANT_RH_SIGNING_KID: staging-2026-10
+    ASSISTANT_RH_SIGNING_KEY_FILE: /etc/conversations-identity/signing.pem
+    ASSISTANT_RH_AUDIT_KEY_FILE: /etc/conversations-identity/audit.key
+    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,conversations-backend,conversations-backend.conversations.svc.cluster.local
+    ENVIRONMENT: staging
     PGCONNECT_TIMEOUT: "5"
     PGSSLMODE: verify-ca
     PGSSLROOTCERT: /etc/scaleway-ca/postgres.pem
+    LLM_DEFAULT_MODEL_HRID: assistant-rh-matte
     LLM_CONFIGURATION_FILE_PATH: /etc/conversations-llm/config.json
   extraVolumes:
+    - name: identity
+      secret: {secretName: conversations-identity}
     - name: scaleway-ca
       secret: {secretName: scaleway-database-ca}
     - name: llm-config
       configMap: {name: conversations-llm-configuration}
   extraVolumeMounts:
+    - {name: identity, mountPath: /etc/conversations-identity, readOnly: true}
     - {name: scaleway-ca, mountPath: /etc/scaleway-ca, readOnly: true}
     - {name: llm-config, mountPath: /etc/conversations-llm, readOnly: true}
   resources:
