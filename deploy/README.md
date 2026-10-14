@@ -30,7 +30,7 @@ Keep repository variable `KAPSULE_STAGING_CD_ENABLED=false` until all prerequisi
 are met. Then use `workflow_dispatch` with `deploy=true` for the first delivery;
 enable the variable only after validation. Manual dispatch becomes available
 once the workflow is merged into the default branch. The GitHub environment
-restricts deployment to `main`.
+restricts deployment to `staging`.
 
 The script checks the exact cluster, required objects, rollout and backend health.
 Helm `--atomic` rolls back the application release on failure; **it does not undo
@@ -40,7 +40,8 @@ and schema compatibility before running `helm rollback` in the same namespace.
 
 ## Application configuration
 
-Both manual and automatic delivery target `main`. The Assistant RH adaptations
+Both manual and automatic delivery target `staging`. The branch does not exist
+yet; create it through the agreed promotion process before activation. The Assistant RH adaptations
 are on `codex/596-individual-identity`; integrate and validate that work before
 expecting a real Assistant RH conversation. This workflow does not merge it.
 

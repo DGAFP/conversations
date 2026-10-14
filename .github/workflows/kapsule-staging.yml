@@ -2,7 +2,7 @@ name: Kapsule staging
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [staging]
   workflow_dispatch:
     inputs:
       deploy:
@@ -41,7 +41,7 @@ jobs:
     needs: validate
     if: >-
       github.event_name != 'pull_request' &&
-      github.ref == 'refs/heads/main' &&
+      github.ref == 'refs/heads/staging' &&
       (inputs.deploy == true || vars.KAPSULE_STAGING_CD_ENABLED == 'true')
     environment: kapsule-staging
     runs-on: ubuntu-latest
