@@ -98,7 +98,7 @@ def _make_stream(with_co2: bool) -> str:
     )
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_albert_co2_impact_appears_in_metadata_and_stream(
     api_client,
@@ -179,7 +179,7 @@ def test_albert_co2_impact_appears_in_metadata_and_stream(
     assert chat_conversation.agent_usage["co2_impact"] == pytest.approx(2 * EXPECTED_CO2_IMPACT)
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_albert_co2_impact_preserved_when_second_request_has_no_co2(
     api_client,

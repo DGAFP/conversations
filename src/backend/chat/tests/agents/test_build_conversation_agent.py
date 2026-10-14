@@ -11,6 +11,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 
 from chat.agents.conversation import ConversationAgent
 from chat.llm_configuration import LLModel, LLMProvider
+from chat.tests.utils import agent_instructions
 
 
 def assert_base_instructions(instructions, date_str=None, language_str=""):
@@ -41,7 +42,7 @@ def test_build_pydantic_agent_success_no_tools():
     assert isinstance(agent, Agent)
     assert agent._system_prompts == ()
 
-    assert_base_instructions(agent._instructions)
+    assert_base_instructions(agent_instructions(agent))
 
     assert isinstance(agent.model, OpenAIChatModel)
     assert agent.model.model_name == "model-123"
@@ -58,7 +59,7 @@ def test_build_pydantic_agent_with_tools(settings):
     agent = ConversationAgent(model_hrid="default-model")
     assert isinstance(agent, Agent)
 
-    assert_base_instructions(agent._instructions, date_str="Today is Friday 25/07/2025.")
+    assert_base_instructions(agent_instructions(agent), date_str="Today is Friday 25/07/2025.")
 
     assert isinstance(agent.model, OpenAIChatModel)
     assert agent.model.model_name == "model-123"
@@ -77,10 +78,10 @@ def test_add_dynamic_system_prompt():
 
     assert len(agent._system_prompt_functions) == 0
 
-    assert_base_instructions(agent._instructions, date_str="Today is Friday 25/07/2025.")
+    assert_base_instructions(agent_instructions(agent), date_str="Today is Friday 25/07/2025.")
 
     agent = ConversationAgent(model_hrid="default-model", language="fr-fr")
-    assert agent._instructions[2]() == "Answer in french."
+    assert agent_instructions(agent)[2]() == "Answer in french."
 
 
 def test_agent_is_web_search_configured():
@@ -130,7 +131,7 @@ def test_build_pydantic_agent_with_legacy_tools(settings, caplog, legacy_tool):
     assert "Ignoring legacy tool(s)" in caplog.text
     assert isinstance(agent, Agent)
 
-    assert_base_instructions(agent._instructions, date_str="Today is Friday 25/07/2025.")
+    assert_base_instructions(agent_instructions(agent), date_str="Today is Friday 25/07/2025.")
 
     assert isinstance(agent.model, OpenAIChatModel)
     assert agent.model.model_name == "model-123"

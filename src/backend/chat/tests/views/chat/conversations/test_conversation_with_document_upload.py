@@ -273,7 +273,7 @@ def fixture_mock_summarization_agent():
 
 
 @pytest.fixture(name="mock_openai_stream")
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def fixture_mock_openai_stream():
     """
     Fixture to mock the OpenAI stream response for document search queries.
@@ -332,7 +332,7 @@ def fixture_mock_openai_stream():
 
 @respx.mock
 @respx.mock
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_document_upload(
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     api_client,
@@ -486,6 +486,7 @@ def test_post_conversation_with_document_upload(
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[1] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -510,6 +511,8 @@ def test_post_conversation_with_document_upload(
         "state": "complete",
         "timestamp": timezone_now,
         "usage": {
+            "audio_seconds": 0.0,
+            "cost": None,
             "cache_audio_read_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
@@ -551,6 +554,7 @@ def test_post_conversation_with_document_upload(
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[3] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -572,6 +576,8 @@ def test_post_conversation_with_document_upload(
         "state": "complete",
         "timestamp": timezone_now,
         "usage": {
+            "audio_seconds": 0.0,
+            "cost": None,
             "cache_audio_read_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
@@ -587,7 +593,7 @@ def test_post_conversation_with_document_upload(
 
 @respx.mock
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_with_document_upload_feature_disabled(
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     api_client,
@@ -658,7 +664,7 @@ def test_post_conversation_with_document_upload_feature_disabled(
 
 @respx.mock
 @respx.mock
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_document_upload_summarize(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913
     api_client,
     mock_document_api,  # pylint: disable=unused-argument
@@ -811,6 +817,7 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[1] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -835,6 +842,8 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
         "state": "complete",
         "timestamp": timezone_now,
         "usage": {
+            "audio_seconds": 0.0,
+            "cost": None,
             "cache_audio_read_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
@@ -870,6 +879,7 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[3] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -891,6 +901,8 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
         "state": "complete",
         "timestamp": timezone_now,
         "usage": {
+            "audio_seconds": 0.0,
+            "cost": None,
             "cache_audio_read_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
@@ -906,7 +918,7 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
 
 @respx.mock
 @respx.mock
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_odt_document_upload(
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     api_client,
@@ -1063,6 +1075,7 @@ def test_post_conversation_with_odt_document_upload(
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[1] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -1087,6 +1100,8 @@ def test_post_conversation_with_odt_document_upload(
         "state": "complete",
         "timestamp": timezone_now,
         "usage": {
+            "audio_seconds": 0.0,
+            "cost": None,
             "cache_audio_read_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
@@ -1128,6 +1143,7 @@ def test_post_conversation_with_odt_document_upload(
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[3] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -1149,6 +1165,8 @@ def test_post_conversation_with_odt_document_upload(
         "state": "complete",
         "timestamp": timezone_now,
         "usage": {
+            "audio_seconds": 0.0,
+            "cost": None,
             "cache_audio_read_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,

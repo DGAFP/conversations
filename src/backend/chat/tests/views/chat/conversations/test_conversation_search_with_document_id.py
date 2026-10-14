@@ -32,7 +32,7 @@ def ai_settings(settings):
 
 
 @respx.mock
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_search_with_document_id_filters_albert_request(
     api_client,
     mock_ai_agent_service,

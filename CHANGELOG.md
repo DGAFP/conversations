@@ -33,6 +33,10 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(back) preserve permission-denied events after the OpenAI SDK update
+- 🐛(tests) support HTTPX2 mocks and preserve asyncio clocks during frozen-time
+  streaming tests after the Pydantic AI security update
+
 - 🔒️(dependencies) update packages flagged by the staging security scan
 
 - ✅(back) make the project list query counts independent of test order

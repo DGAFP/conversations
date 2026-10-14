@@ -128,6 +128,7 @@ def history_conversation_fixture(request):
                 ],
             },
             {
+                "workspace_ref": None,
                 "kind": "response",
                 "model_name": "test-model",
                 "parts": [
@@ -162,6 +163,7 @@ def history_conversation_fixture(request):
                 ],
             },
             {
+                "workspace_ref": None,
                 "kind": "response",
                 "model_name": "test-model",
                 "parts": [
@@ -205,6 +207,7 @@ def history_conversation_fixture(request):
                 ],
             },
             {
+                "workspace_ref": None,
                 "kind": "response",
                 "model_name": "test-model",
                 "parts": [
@@ -244,6 +247,7 @@ def history_conversation_fixture(request):
                 ],
             },
             {
+                "workspace_ref": None,
                 "kind": "response",
                 "metadata": None,
                 "model_name": "test-model",
@@ -288,7 +292,7 @@ def history_conversation_fixture(request):
 
 
 @pytest.mark.parametrize("history_conversation", [PYAI_CURRENT, PYAI_V1_17], indirect=True)
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_data_protocol_with_history(
     api_client, mock_openai_stream, history_conversation
@@ -381,7 +385,7 @@ def test_post_conversation_data_protocol_with_history(
     assert len(history_conversation.pydantic_messages) == 6  # Original 4 + 2 new ones
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_with_image_with_history(
     api_client, mock_openai_stream_image, history_conversation
@@ -511,7 +515,7 @@ def test_post_conversation_with_image_with_history(
     )
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_tool_call_with_history(
     api_client, mock_openai_stream_tool, settings, history_conversation
@@ -626,7 +630,7 @@ def test_post_conversation_tool_call_with_history(
     )  # Original 4 + 4 new ones (2 tool requests)
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_tool_call_fails_with_history(
     api_client, mock_openai_stream_tool, history_conversation
@@ -824,6 +828,7 @@ def history_conversation_with_image_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "model_name": "test-model",
             "parts": [{"content": "I see a small black square in the image.", "part_kind": "text"}],
@@ -850,6 +855,7 @@ def history_conversation_with_image_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "model_name": "test-model",
             "parts": [
@@ -966,6 +972,7 @@ def history_conversation_with_tool_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "metadata": None,
             "model_name": "test-model",
@@ -1008,6 +1015,7 @@ def history_conversation_with_tool_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "metadata": None,
             "model_name": "test-model",
@@ -1042,6 +1050,7 @@ def history_conversation_with_tool_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "metadata": None,
             "model_name": "test-model",
@@ -1089,6 +1098,7 @@ def history_conversation_with_tool_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "metadata": None,
             "model_name": "test-model",
@@ -1118,7 +1128,7 @@ def history_conversation_with_tool_fixture():
     return conversation
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_with_existing_image_history(
     api_client, mock_openai_stream, history_conversation_with_image
@@ -1211,7 +1221,7 @@ def test_post_conversation_with_existing_image_history(
     assert len(history_conversation_with_image.pydantic_messages) == 6  # Original 4 + 2 new ones
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_with_existing_tool_history(
     api_client, mock_openai_stream_tool, settings, history_conversation_with_tool
@@ -1334,6 +1344,7 @@ def test_post_conversation_with_existing_tool_history(
     }
 
     assert history_conversation_with_tool.pydantic_messages[9] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": "tool_call",
         "kind": "response",
@@ -1361,6 +1372,8 @@ def test_post_conversation_with_existing_tool_history(
         "state": "complete",
         "timestamp": "2025-07-25T10:36:35.297675Z",
         "usage": {
+            "audio_seconds": 0.0,
+            "cost": None,
             "cache_audio_read_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
@@ -1401,6 +1414,7 @@ def test_post_conversation_with_existing_tool_history(
     }
 
     assert history_conversation_with_tool.pydantic_messages[11] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": "stop",
         "kind": "response",
@@ -1425,6 +1439,8 @@ def test_post_conversation_with_existing_tool_history(
         "state": "complete",
         "timestamp": "2025-07-25T10:36:35.297675Z",
         "usage": {
+            "audio_seconds": 0.0,
+            "cost": None,
             "cache_audio_read_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
@@ -1438,7 +1454,7 @@ def test_post_conversation_with_existing_tool_history(
     }
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_add_image_to_conversation_with_tool_history(
     api_client, mock_openai_stream_image, history_conversation_with_tool
@@ -1546,7 +1562,7 @@ def test_post_conversation_add_image_to_conversation_with_tool_history(
     )
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 @patch("chat.clients.pydantic_ai.TitleGenerationAgent", wraps=TitleGenerationAgent)
 def test_post_conversation_triggers_automatic_title_generation_after_first_message(
@@ -1609,7 +1625,7 @@ def test_post_conversation_triggers_automatic_title_generation_after_first_messa
     mock_title_agent.assert_called_once()
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_triggers_automatic_title_generation_at_threshold(
     api_client, mock_openai_stream_with_title_generation, settings, history_conversation
@@ -1669,7 +1685,7 @@ def test_post_conversation_triggers_automatic_title_generation_at_threshold(
     assert mock_openai_stream_with_title_generation.call_count == 2
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_does_not_regenerate_title_when_user_set(
     api_client, mock_openai_stream_with_title_generation, settings, history_conversation
@@ -1718,7 +1734,7 @@ def test_post_conversation_does_not_regenerate_title_when_user_set(
     assert mock_openai_stream_with_title_generation.call_count == 1
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_does_not_generate_title_before_threshold(
     api_client, mock_openai_stream_with_title_generation, settings
@@ -1783,7 +1799,7 @@ def test_post_conversation_does_not_generate_title_before_threshold(
     assert mock_openai_stream_with_title_generation.call_count == 1
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_does_not_generate_title_after_threshold(
     api_client, mock_openai_stream_with_title_generation, settings, history_conversation
