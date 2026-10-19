@@ -11,12 +11,14 @@ permissions:
 
 jobs:
   install-dependencies:
+    if: github.repository == 'suitenumerique/conversations'
     uses: ./.github/workflows/dependencies.yml
     with:
       node_version: '22.23.2'
       with-front-dependencies-installation: true
 
   synchronize-with-crowdin:
+    if: github.repository == 'suitenumerique/conversations'
     runs-on: ubuntu-latest
     permissions:
       contents: write

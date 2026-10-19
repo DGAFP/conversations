@@ -2,7 +2,9 @@ name: Kapsule staging
 on:
   pull_request:
   push:
-    branches: [staging]
+    # Preserve the image scans formerly run by Docker Hub on main and v* tags.
+    branches: [main, staging]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       deploy:
@@ -13,8 +15,9 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: kapsule-staging-${{ github.ref }}
-  cancel-in-progress: false
+  group: kapsule-staging-${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/staging') && github.ref || github.run_id }}
+  # Never interrupt staging publication; only obsolete PR validations.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -36,10 +39,35 @@ jobs:
           helm template conversations src/helm/conversations -f deploy/kapsule/staging.yaml > /dev/null
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build images without credentials
+        id: build-images
         run: |
           set -euo pipefail
-          docker buildx build --platform linux/amd64 --target backend-production --build-arg DOCKER_USER=1000:1000 -f Dockerfile .
-          docker buildx build --platform linux/amd64 --target frontend-production --build-arg DOCKER_USER=1000:1000 -f src/frontend/Dockerfile .
+          docker buildx build --platform linux/amd64 --target backend-production --build-arg DOCKER_USER=1000:1000 -f Dockerfile --load -t conversations-backend:ci .
+          docker buildx build --platform linux/amd64 --target frontend-production --build-arg DOCKER_USER=1000:1000 -f src/frontend/Dockerfile --load -t conversations-frontend:ci .
+      - name: Scan backend validation image
+        # Still report both scans if one fails, but never scan a failed build.
+        if: ${{ !cancelled() && steps.build-images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e
+        with:
+          version: v0.75.0
+          image-ref: conversations-backend:ci
+          scanners: vuln,secret
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
+      - name: Scan frontend validation image
+        # Still report both scans if one fails, but never scan a failed build.
+        if: ${{ !cancelled() && steps.build-images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e
+        with:
+          version: v0.75.0
+          image-ref: conversations-frontend:ci
+          scanners: vuln,secret
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
   required-checks:
     needs: validate
     if: >-
