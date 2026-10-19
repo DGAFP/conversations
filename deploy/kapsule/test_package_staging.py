@@ -51,7 +51,24 @@ class PackageTest(unittest.TestCase):
                                       capture_output=True, text=True)
             self.assertEqual(rendered.returncode, 0, rendered.stderr)
             self.assertIn(DIGEST, rendered.stdout)
-            self.assertNotIn("kind: Ingress\n", rendered.stdout)
+            if RELEASE == "assistant-rh-api":
+                self.assertNotIn("kind: Ingress\n", rendered.stdout)
+            else:
+                host = "staging.assistant-rh.beta.gouv.fr"
+                self.assertIn(host, env["DJANGO_ALLOWED_HOSTS"].split(","))
+                self.assertEqual(env["DJANGO_CSRF_TRUSTED_ORIGINS"], "https://" + host)
+                ingress = values["ingress"]
+                self.assertTrue(ingress["enabled"])
+                self.assertEqual(ingress["host"], host)
+                self.assertEqual(ingress["className"], "traefik")
+                self.assertEqual(ingress["annotations"]["traefik.ingress.kubernetes.io/router.entrypoints"], "websecure")
+                self.assertEqual(ingress["annotations"]["traefik.ingress.kubernetes.io/router.tls"], "true")
+                self.assertEqual(ingress["annotations"]["traefik.ingress.kubernetes.io/router.tls.certresolver"], "letsencrypt")
+                self.assertFalse(ingress["tls"]["enabled"])
+                self.assertFalse(values["ingressAdmin"]["enabled"])
+                self.assertFalse(values["ingressMedia"]["enabled"])
+                self.assertEqual(rendered.stdout.count("kind: Ingress\n"), 1)
+                self.assertIn(host, rendered.stdout)
 
     def test_bad_identity_or_digest_cannot_produce_an_archive(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -23,7 +23,8 @@ backend:
     ASSISTANT_RH_SIGNING_KID: staging-2026-10
     ASSISTANT_RH_SIGNING_KEY_FILE: /etc/conversations-identity/signing.pem
     ASSISTANT_RH_AUDIT_KEY_FILE: /etc/conversations-identity/audit.key
-    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,conversations-backend,conversations-backend.conversations.svc.cluster.local
+    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,conversations-backend,conversations-backend.conversations.svc.cluster.local,staging.assistant-rh.beta.gouv.fr
+    DJANGO_CSRF_TRUSTED_ORIGINS: https://staging.assistant-rh.beta.gouv.fr
     ENVIRONMENT: staging
     LOGIN_REDIRECT_URL: "/"
     LOGOUT_REDIRECT_URL: "/"
@@ -114,9 +115,15 @@ frontend:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {cpu: 500m, memory: 256Mi}
 ingress:
-  enabled: false
+  enabled: true
   className: traefik
-  host: ""
+  host: staging.assistant-rh.beta.gouv.fr
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: 'true'
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+  tls:
+    enabled: false
 ingressAdmin:
   enabled: false
 ingressMedia:
