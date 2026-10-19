@@ -2,7 +2,7 @@ import { Button } from '@gouvfr-lasuite/cunningham-react';
 import { useTranslation } from 'react-i18next';
 import { css } from 'styled-components';
 
-import IconAssistant from '@/assets/logo/logomark.svg?react';
+import LogoAssistant from '@/assets/logo/logo-assistant.svg?react';
 import { Box, Icon, Text } from '@/components';
 import { productName, useConfig } from '@/core';
 import { useCunninghamTheme } from '@/cunningham';
@@ -52,9 +52,9 @@ export default function HomeBanner() {
           $align="left"
           $gap={spacingsTokens['s']}
         >
-          <IconAssistant
+          <LogoAssistant
             aria-label={t('{{productName}} Logo', { productName })}
-            width={64}
+            width={280}
             color={colorsTokens['logo-1-light']}
           />
           <Text
