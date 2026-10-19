@@ -41,7 +41,7 @@ def settings_with_concatenation(settings):
     return settings
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @pytest.mark.parametrize(
     ("conversation_in_project", "expected_system_message"),
     (

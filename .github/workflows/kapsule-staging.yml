@@ -1,0 +1,178 @@
+name: Kapsule staging
+on:
+  pull_request:
+  push:
+    # Preserve the image scans formerly run by Docker Hub on main and v* tags.
+    branches: [main, staging]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publier les images et déployer le nouveau staging Kapsule
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: kapsule-staging-${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/staging') && github.ref || github.run_id }}
+  # Never interrupt staging publication; only obsolete PR validations.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.20.2
+      - name: Validate Helm and shell
+        run: |
+          set -euo pipefail
+          python3 deploy/kapsule/test_wait_required_checks.py
+          python3 deploy/kapsule/test_package_staging.py
+          bash -n deploy/kapsule/deploy.sh
+          helm lint src/helm/conversations -f deploy/kapsule/staging.yaml
+          helm template conversations src/helm/conversations -f deploy/kapsule/staging.yaml > /dev/null
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build images without credentials
+        id: build-images
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --target backend-production --build-arg DOCKER_USER=1000:1000 -f Dockerfile --load -t conversations-backend:ci .
+          docker buildx build --platform linux/amd64 --target frontend-production --build-arg DOCKER_USER=1000:1000 -f src/frontend/Dockerfile --load -t conversations-frontend:ci .
+      - name: Scan backend validation image
+        # Still report both scans if one fails, but never scan a failed build.
+        if: ${{ !cancelled() && steps.build-images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e
+        with:
+          version: v0.75.0
+          image-ref: conversations-backend:ci
+          scanners: vuln,secret
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
+      - name: Scan frontend validation image
+        # Still report both scans if one fails, but never scan a failed build.
+        if: ${{ !cancelled() && steps.build-images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e
+        with:
+          version: v0.75.0
+          image-ref: conversations-frontend:ci
+          scanners: vuln,secret
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
+  required-checks:
+    needs: validate
+    if: >-
+      github.repository == 'DGAFP/conversations' &&
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/staging' &&
+      (inputs.deploy == true || vars.KAPSULE_STAGING_CD_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Require successful CI on this exact revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 deploy/kapsule/wait-required-checks.py
+  publish:
+    needs: [validate, required-checks]
+    if: >-
+      github.repository == 'DGAFP/conversations' &&
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/staging' &&
+      (inputs.deploy == true || vars.KAPSULE_STAGING_CD_ENABLED == 'true')
+    environment: kapsule-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      backend: ${{ steps.images.outputs.backend }}
+      frontend: ${{ steps.images.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.20.2
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Refuse an obsolete staging revision
+        run: |
+          set -euo pipefail
+          tip=$(git ls-remote origin refs/heads/staging | cut -f1)
+          test "$tip" = "$GITHUB_SHA" || { echo 'staging advanced; refusing obsolete delivery' >&2; exit 1; }
+      - name: Authenticate to the dedicated staging registry
+        env:
+          REGISTRY_KEY: ${{ secrets.SCW_REGISTRY_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY_KEY" || { echo 'SCW_REGISTRY_SECRET_KEY missing' >&2; exit 1; }
+          printf '%s' "$REGISTRY_KEY" | docker login rg.fr-par.scw.cloud/assistant-rh-staging -u nologin --password-stdin
+      - name: Build release images
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --target backend-production --build-arg DOCKER_USER=1000:1000 -f Dockerfile --load -t "rg.fr-par.scw.cloud/assistant-rh-staging/conversations-backend:sha-${GITHUB_SHA}" .
+          docker buildx build --platform linux/amd64 --target frontend-production --build-arg DOCKER_USER=1000:1000 -f src/frontend/Dockerfile --load -t "rg.fr-par.scw.cloud/assistant-rh-staging/conversations-frontend:sha-${GITHUB_SHA}" .
+      - name: Scan backend release image
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e
+        with:
+          version: v0.75.0
+          image-ref: rg.fr-par.scw.cloud/assistant-rh-staging/conversations-backend:sha-${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
+      - name: Scan frontend release image
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e
+        with:
+          version: v0.75.0
+          image-ref: rg.fr-par.scw.cloud/assistant-rh-staging/conversations-frontend:sha-${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
+      - name: Publish scanned images
+        id: images
+        run: |
+          set -euo pipefail
+          image="rg.fr-par.scw.cloud/assistant-rh-staging/conversations-backend:sha-${GITHUB_SHA}"
+          docker push "$image"
+          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          echo "backend=${digest##*@}" >> "$GITHUB_OUTPUT"
+          image="rg.fr-par.scw.cloud/assistant-rh-staging/conversations-frontend:sha-${GITHUB_SHA}"
+          docker push "$image"
+          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          echo "frontend=${digest##*@}" >> "$GITHUB_OUTPUT"
+      - name: Package the validated staging release for Flux
+        id: chart
+        env:
+          BACKEND_DIGEST: ${{ steps.images.outputs.backend }}
+          FRONTEND_DIGEST: ${{ steps.images.outputs.frontend }}
+          BUNDLE_OUTPUT_DIR: ${{ runner.temp }}/staging-chart
+        run: python3 deploy/kapsule/package-staging.py
+      - name: Publish the staging chart for Flux
+        env:
+          REGISTRY_KEY: ${{ secrets.SCW_REGISTRY_SECRET_KEY }}
+          CHART_PATH: ${{ steps.chart.outputs.chart_path }}
+        run: |
+          set -euo pipefail
+          tip=$(git ls-remote origin refs/heads/staging | cut -f1)
+          test "$tip" = "$GITHUB_SHA" || { echo 'staging advanced; refusing obsolete delivery' >&2; exit 1; }
+          printf '%s' "$REGISTRY_KEY" | helm registry login rg.fr-par.scw.cloud -u nologin --password-stdin
+          helm push "$CHART_PATH" oci://rg.fr-par.scw.cloud/assistant-rh-staging
+          echo "Chart published; deployment readiness is reported by the Flux HelmRelease." >> "$GITHUB_STEP_SUMMARY"
+      - name: Logout
+        if: always()
+        run: |
+          docker logout rg.fr-par.scw.cloud/assistant-rh-staging
+          helm registry logout rg.fr-par.scw.cloud

@@ -105,6 +105,7 @@ def _make_pydantic_text_response(  # pylint: disable=too-many-arguments,too-many
     conversation_id=ANY,
 ):
     return {
+        "workspace_ref": None,
         "conversation_id": conversation_id,
         "finish_reason": "stop",
         "kind": "response",
@@ -119,7 +120,10 @@ def _make_pydantic_text_response(  # pylint: disable=too-many-arguments,too-many
                 "provider_name": None,
             }
         ],
-        "provider_details": {"finish_reason": "stop", "timestamp": timestamp},
+        "provider_details": {
+            "finish_reason": "stop",
+            "timestamp": timestamp,
+        },
         "provider_name": "openai",
         "provider_response_id": provider_response_id,
         "provider_url": provider_url,
@@ -204,7 +208,7 @@ def test_post_conversation_no_messages(api_client):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_data_protocol(api_client, mock_openai_stream, hello_conversation_data):
     """Test posting messages to a conversation using the 'data' protocol."""
@@ -236,7 +240,7 @@ def test_post_conversation_data_protocol(api_client, mock_openai_stream, hello_c
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 @patch("chat.keepalive.get_current_time")
 def test_post_conversation_data_protocol_drops_keepalive_after_the_terminator(
@@ -284,7 +288,7 @@ def test_post_conversation_data_protocol_drops_keepalive_after_the_terminator(
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_with_image(api_client, mock_openai_stream_image):
     """Ensure an image URL is correctly forwarded to the AI service."""
@@ -435,7 +439,7 @@ def test_post_conversation_with_image(api_client, mock_openai_stream_image):
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_tool_call(api_client, mock_openai_stream_tool, settings):
     """Ensure tool calls are correctly forwarded and streamed back."""
@@ -531,6 +535,7 @@ def test_post_conversation_tool_call(api_client, mock_openai_stream_tool, settin
     assert chat_conversation.pydantic_messages == [
         _make_pydantic_request(_run_id, ENGLISH_INSTRUCTIONS, ["Weather in Paris?"]),
         {
+            "workspace_ref": None,
             "conversation_id": ANY,
             "finish_reason": "tool_call",
             "kind": "response",
@@ -589,7 +594,7 @@ def test_post_conversation_tool_call(api_client, mock_openai_stream_tool, settin
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_tool_call_fails(api_client, mock_openai_stream_tool):
     """Ensure tool calls are correctly forwarded and streamed back when failing."""
@@ -691,6 +696,7 @@ def test_post_conversation_tool_call_fails(api_client, mock_openai_stream_tool):
     assert chat_conversation.pydantic_messages == [
         _make_pydantic_request(_run_id, french_instructions, ["Weather in Paris?"]),
         {
+            "workspace_ref": None,
             "conversation_id": ANY,
             "finish_reason": "tool_call",
             "kind": "response",
@@ -770,7 +776,7 @@ def test_post_conversation_model_selection_invalid(api_client):
     assert response.json() == {"model_hrid": ["Invalid model_hrid."]}
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_model_selection_new(
     api_client,
@@ -812,7 +818,7 @@ def test_post_conversation_model_selection_new(
     assert json.loads(mock_openai_stream.calls.last.request.content)["model"] == "plop-model"
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @pytest.mark.parametrize("stream_delay", [None, 0.0001])
 @respx.mock
 def test_post_conversation_data_protocol_no_stream(
@@ -970,7 +976,7 @@ def test_post_conversation_data_protocol_no_stream(
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 @pytest.mark.asyncio
 async def test_post_conversation_async(api_client, mock_openai_stream, monkeypatch, caplog):
@@ -1161,7 +1167,7 @@ def test_post_conversation_oidc_refresh_enabled_unrefreshed(  # pylint: disable=
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @respx.mock
 def test_post_conversation_oidc_refresh_enabled(  # pylint: disable=unused-argument
     api_client, mock_openai_stream, oidc_refresh_token_enabled, hello_conversation_data
@@ -1198,7 +1204,7 @@ def test_post_conversation_oidc_refresh_enabled(  # pylint: disable=unused-argum
     assert len(chat_conversation.pydantic_messages) == 2
 
 
-@freeze_time(FROZEN_TIMESTAMP)
+@freeze_time(FROZEN_TIMESTAMP, real_asyncio=True)
 @respx.mock
 def test_post_conversation_is_not_affected_by_the_creation_throttle(
     api_client, mock_openai_stream, hello_conversation_data

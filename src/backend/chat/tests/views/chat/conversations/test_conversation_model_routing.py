@@ -57,7 +57,7 @@ def routed_llm_configs(settings):
     settings.LLM_FALLBACK_MODEL_HRID_1 = "fallback-1"
 
 
-@freeze_time(FROZEN)
+@freeze_time(FROZEN, real_asyncio=True)
 @respx.mock
 def test_new_conversation_pins_default_when_main_is_healthy(
     api_client, mock_openai_stream, hello_conversation_data
@@ -77,7 +77,7 @@ def test_new_conversation_pins_default_when_main_is_healthy(
     assert conversation.model_hrid == "main-model"
 
 
-@freeze_time(FROZEN)
+@freeze_time(FROZEN, real_asyncio=True)
 @respx.mock
 def test_new_conversation_pins_fallback_when_main_is_red(
     api_client, mock_openai_stream, hello_conversation_data, health_cache
@@ -97,7 +97,7 @@ def test_new_conversation_pins_fallback_when_main_is_red(
     assert conversation.model_hrid == "fallback-1"
 
 
-@freeze_time(FROZEN)
+@freeze_time(FROZEN, real_asyncio=True)
 @respx.mock
 def test_existing_conversation_keeps_pinned_model_even_if_param_changes(
     api_client, mock_openai_stream, hello_conversation_data
@@ -119,7 +119,7 @@ def test_existing_conversation_keeps_pinned_model_even_if_param_changes(
     assert json.loads(mock_openai_stream.calls.last.request.content)["model"] == "fb1-llm"
 
 
-@freeze_time(FROZEN)
+@freeze_time(FROZEN, real_asyncio=True)
 @respx.mock
 def test_explicit_non_default_model_in_request_is_pinned(
     api_client, mock_openai_stream, hello_conversation_data
@@ -137,7 +137,7 @@ def test_explicit_non_default_model_in_request_is_pinned(
     assert conversation.model_hrid == "fallback-1"
 
 
-@freeze_time(FROZEN)
+@freeze_time(FROZEN, real_asyncio=True)
 @respx.mock
 def test_main_yellow_stays_on_main_under_default_threshold(
     api_client, mock_openai_stream, hello_conversation_data, health_cache
@@ -159,7 +159,7 @@ def test_main_yellow_stays_on_main_under_default_threshold(
     )  # yellow is still "good enough" for the default threshold
 
 
-@freeze_time(FROZEN)
+@freeze_time(FROZEN, real_asyncio=True)
 @respx.mock
 def test_main_yellow_stays_on_main_when_threshold_raised_to_red(
     api_client, mock_openai_stream, hello_conversation_data, health_cache
@@ -181,7 +181,7 @@ def test_main_yellow_stays_on_main_when_threshold_raised_to_red(
     assert conversation.model_hrid == "main-model"
 
 
-@freeze_time(FROZEN)
+@freeze_time(FROZEN, real_asyncio=True)
 @respx.mock
 def test_main_red_with_yellow_fb1_stays_on_fb1_under_default_fallback_threshold(
     api_client, mock_openai_stream, hello_conversation_data, health_cache, settings
@@ -209,7 +209,7 @@ def test_main_red_with_yellow_fb1_stays_on_fb1_under_default_fallback_threshold(
     assert conversation.model_hrid == "fallback-1"
 
 
-@freeze_time(FROZEN)
+@freeze_time(FROZEN, real_asyncio=True)
 @respx.mock
 def test_fallback_threshold_red_accepts_yellow_fb1(
     api_client, mock_openai_stream, hello_conversation_data, health_cache

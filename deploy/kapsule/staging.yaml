@@ -1,0 +1,130 @@
+# Configuration non secrète du nouveau staging Kapsule.
+fullnameOverride: conversations
+image:
+  repository: rg.fr-par.scw.cloud/assistant-rh-staging/conversations-backend
+  credentials:
+    name: scw-registry
+backend:
+  replicas: 2
+  envFrom:
+    - secretRef: {name: conversations-runtime}
+  envVars:
+    DJANGO_CONFIGURATION: Production
+    DJANGO_SETTINGS_MODULE: conversations.settings
+    DB_HOST: "10.10.1.2"
+    DB_PORT: "5432"
+    DB_NAME: conversations
+    DB_USER: conversations_app
+    ASSISTANT_RH_ENABLED: "true"
+    ASSISTANT_RH_LOCAL_LOGIN_ENABLED: "true"
+    ASSISTANT_RH_API_URL: http://assistant-rh-api.assistant-rh-api.svc.cluster.local:8000/v1
+    ASSISTANT_RH_DELEGATION_ISSUER: urn:assistant-rh:conversations:staging
+    ASSISTANT_RH_API_AUDIENCE: assistant-rh-api
+    ASSISTANT_RH_SIGNING_KID: staging-2026-10
+    ASSISTANT_RH_SIGNING_KEY_FILE: /etc/conversations-identity/signing.pem
+    ASSISTANT_RH_AUDIT_KEY_FILE: /etc/conversations-identity/audit.key
+    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,conversations-backend,conversations-backend.conversations.svc.cluster.local,staging.assistant-rh.beta.gouv.fr
+    DJANGO_CSRF_TRUSTED_ORIGINS: https://staging.assistant-rh.beta.gouv.fr
+    ENVIRONMENT: staging
+    LOGIN_REDIRECT_URL: "/"
+    LOGOUT_REDIRECT_URL: "/"
+    FEATURE_FLAG_DOCUMENT_UPLOAD: DISABLED
+    FEATURE_FLAG_PRESENTATION_GENERATION: DISABLED
+    FEATURE_FLAG_WEB_SEARCH: DISABLED
+    FEATURE_FLAG_DATAGOUV_CONNECTOR: DISABLED
+    PGCONNECT_TIMEOUT: "5"
+    PGSSLMODE: verify-ca
+    PGSSLROOTCERT: /etc/scaleway-ca/postgres.pem
+    LLM_DEFAULT_MODEL_HRID: assistant-rh-matte
+    LLM_CONFIGURATION_FILE_PATH: /etc/conversations-llm/config.json
+  extraVolumes:
+    - name: identity
+      secret: {secretName: conversations-identity}
+    - name: scaleway-ca
+      secret: {secretName: scaleway-database-ca}
+    - name: llm-config
+      configMap: {name: conversations-llm-configuration}
+  extraVolumeMounts:
+    - {name: identity, mountPath: /etc/conversations-identity, readOnly: true}
+    - {name: scaleway-ca, mountPath: /etc/scaleway-ca, readOnly: true}
+    - {name: llm-config, mountPath: /etc/conversations-llm, readOnly: true}
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}
+  migrateJobAnnotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  jobs:
+    activeDeadlineSeconds: 300
+    ttlSecondsAfterFinished: 600
+    backoffLimit: 1
+  migrate:
+    command: [python, manage.py, migrate, --check, --no-input]
+  createsuperuser:
+    enabled: false
+  celeryBeat:
+    enabled: false
+  celeryWorkers:
+  - name: default
+    replicas: 1
+    command: []
+    args:
+    - celery
+    - -A
+    - conversations.celery_app
+    - worker
+    - -l
+    - INFO
+    - -n
+    - conversations@%h
+    - --concurrency=1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: '1'
+        memory: 1Gi
+    probes:
+      liveness:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - celery -A conversations.celery_app inspect ping -d conversations@$HOSTNAME
+        initialDelaySeconds: 30
+        periodSeconds: 60
+        timeoutSeconds: 15
+        failureThreshold: 3
+      readiness:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - celery -A conversations.celery_app inspect ping -d conversations@$HOSTNAME
+        initialDelaySeconds: 20
+        periodSeconds: 30
+        timeoutSeconds: 15
+        failureThreshold: 3
+frontend:
+  replicas: 2
+  image:
+    repository: rg.fr-par.scw.cloud/assistant-rh-staging/conversations-frontend
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+ingress:
+  enabled: true
+  className: traefik
+  host: staging.assistant-rh.beta.gouv.fr
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: 'true'
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+  tls:
+    enabled: false
+ingressAdmin:
+  enabled: false
+ingressMedia:
+  enabled: false
