@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router';
 
 import Logo from '@/assets/logo/logo-assistant.svg?react';
 import { Box, Icon, StyledLink } from '@/components';
+import { productName } from '@/core';
 import { useAuth } from '@/features/auth';
 import { useChatPreferencesStore } from '@/features/chat/stores/useChatPreferencesStore';
 import { usePendingChatStore } from '@/features/chat/stores/usePendingChatStore';
@@ -56,7 +57,10 @@ export const LeftPanelHeader = ({ children }: PropsWithChildren) => {
         $align="center"
       >
         <StyledLink href="/">
-          <Logo aria-label={t('Assistant Logo')} width={160} />
+          <Logo
+            aria-label={t('{{productName}} Logo', { productName })}
+            width={200}
+          />
         </StyledLink>
         {!isDesktop && (
           <Button

@@ -22,7 +22,7 @@ test.describe('Home page', () => {
       /^EN$/i,
     );
     await expect(
-      header.getByRole('img', { name: 'Assistant logo' }),
+      header.getByRole('img', { name: "L'Assistant RH Logo" }),
     ).toBeVisible();
 
     // Check the titles
@@ -69,10 +69,10 @@ test.describe('Home page', () => {
       header.getByRole('img', { name: 'Gouvernement Logo' }),
     ).toBeVisible();
     await expect(
-      header.getByRole('img', { name: 'Assistant logo' }),
+      header.getByRole('img', { name: "L'Assistant RH Logo" }),
     ).toBeVisible();
     await expect(
-      header.getByRole('img', { name: 'Assistant logo' }),
+      header.getByRole('img', { name: "L'Assistant RH Logo" }),
     ).toBeVisible();
 
     // Check the titles

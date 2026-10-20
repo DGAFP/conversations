@@ -55,7 +55,7 @@ def _delegation_keys():
 
 
 def delegation_refused(exc):
-    """The OpenAI SDK wraps auth-flow errors as connection errors; find our refusal."""
+    """Find a delegation refusal, whether direct or wrapped by the OpenAI SDK."""
     seen = set()
     while exc is not None and id(exc) not in seen:
         if isinstance(exc, PermissionDenied):

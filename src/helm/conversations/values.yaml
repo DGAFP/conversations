@@ -152,6 +152,7 @@ backend:
   ## @extra backend.envVars.FROM_SECRET.secretKeyRef.name Name of a Secret when configuring env vars from a Secret
   ## @extra backend.envVars.FROM_SECRET.secretKeyRef.key Key within a Secret when configuring env vars from a Secret
   ## @skip backend.envVars
+  envFrom: []
   envVars:
     <<: *commonEnvVars
 
@@ -192,6 +193,7 @@ backend:
  ## @param backend.createsuperuser.command backend migrate command
  ## @param backend.createsuperuser.restartPolicy backend migrate job restart policy
   createsuperuser:
+    enabled: true
     command:
       - "/bin/sh"
       - "-c"

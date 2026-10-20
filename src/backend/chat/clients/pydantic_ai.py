@@ -125,6 +125,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import Model, infer_model_profile
+from rest_framework.exceptions import PermissionDenied
 
 from core.analytics import acapture_event
 from core.feature_flags.helpers import is_feature_enabled
@@ -582,7 +583,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                 error_event = events_v4.ErrorPart(error=error_code)
                 for translated in translator.translate(error_event):
                     yield self.event_encoder.encode(translated)
-            except ModelAPIError as exc:
+            except (ModelAPIError, PermissionDenied) as exc:
                 if delegation_refused(exc):
                     # Rights or session revoked since the request started (Assistant RH).
                     logger.warning("Delegation refused for conversation %s", self.conversation.pk)

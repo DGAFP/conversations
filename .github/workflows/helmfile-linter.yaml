@@ -3,9 +3,16 @@ run-name: Helmfile lint
 
 on:
   push:
+    branches: [main, staging]
   pull_request:
     branches:
       - 'main'
+      - 'staging'
+
+# Only superseded PR validations are cancelled; integration runs are preserved.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

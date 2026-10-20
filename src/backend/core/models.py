@@ -564,7 +564,7 @@ class MinistryGrant(models.Model):
     """A logical corpus entitlement; no inference-provider identity is stored here."""
 
     group = models.ForeignKey(
-        "auth.Group", on_delete=models.CASCADE, related_name="assistant_rh_grants"
+        auth_models.Group, on_delete=models.CASCADE, related_name="assistant_rh_grants"
     )
     ministry = models.CharField(max_length=10, choices=[(m, m.upper()) for m in MINISTRIES])
 

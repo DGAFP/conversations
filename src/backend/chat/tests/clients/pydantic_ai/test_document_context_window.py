@@ -21,6 +21,7 @@ from chat.factories import (
     UserFactory,
 )
 from chat.llm_configuration import LLModel, LLMProvider
+from chat.tests.utils import agent_instructions
 
 pytestmark = [pytest.mark.django_db(), pytest.mark.usefixtures("clear_cache")]
 
@@ -630,7 +631,7 @@ def _resolve_instruction(service, name):
     """Find a registered Pydantic-AI instruction callable by name and invoke it."""
     matches = [
         fn
-        for fn in service.conversation_agent._instructions  # pylint: disable=protected-access
+        for fn in agent_instructions(service.conversation_agent)  # pylint: disable=protected-access
         if callable(fn) and fn.__name__ == name
     ]
     assert matches, f"instruction '{name}' not registered on the agent"
