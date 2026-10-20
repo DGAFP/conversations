@@ -12,6 +12,11 @@ interface DocumentSource {
   access: 'public' | 'authenticated';
 }
 
+const documentLinkCss = `
+  color: var(--c--contextuals--content--semantic--brand--primary);
+  text-decoration: underline;
+`;
+
 export function assistantRHSources(message?: UIMessage): DocumentSource[] {
   const metadata = message?.metadata as
     { assistant_rh?: { sources?: DocumentSource[] } } | undefined;
@@ -101,6 +106,7 @@ export function AssistantRHSources({ message }: { message?: UIMessage }) {
                   </Button>
                 )}
                 <StyledLink
+                  $css={documentLinkCss}
                   href={url}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -122,6 +128,7 @@ export function AssistantRHSources({ message }: { message?: UIMessage }) {
             téléchargez-le.
           </Text>
           <StyledLink
+            $css={documentLinkCss}
             href={`${previewUrl}?download=1`}
             target="_blank"
             rel="noopener noreferrer"
