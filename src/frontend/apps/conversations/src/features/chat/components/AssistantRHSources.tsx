@@ -1,9 +1,7 @@
-import { Button } from '@gouvfr-lasuite/cunningham-react';
 import { UIMessage } from 'ai';
-import { useState } from 'react';
 
 import { backendUrl } from '@/api';
-import { Box, StyledLink, Text } from '@/components';
+import { Box, Icon, StyledLink, Text } from '@/components';
 
 interface DocumentSource {
   title: string;
@@ -12,9 +10,27 @@ interface DocumentSource {
   access: 'public' | 'authenticated';
 }
 
+const sourceRowCss = `
+  display: block;
+  min-width: 0;
+  width: 100%;
+  border-radius: 4px;
+  padding: var(--c--globals--spacings--xs);
+  font-size: 14px;
+`;
+
 const documentLinkCss = `
-  color: var(--c--contextuals--content--semantic--brand--primary);
-  text-decoration: underline;
+  ${sourceRowCss}
+  color: var(--c--contextuals--content--semantic--neutral--primary);
+  text-decoration: none;
+  transition: background-color 0.3s;
+  &:hover {
+    background-color: var(--c--contextuals--background--semantic--overlay--primary);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--c--contextuals--content--semantic--brand--primary);
+    outline-offset: 2px;
+  }
 `;
 
 export function assistantRHSources(message?: UIMessage): DocumentSource[] {
@@ -70,15 +86,11 @@ function documentUrl(source: DocumentSource): string | null {
 
 export function AssistantRHSources({ message }: { message?: UIMessage }) {
   const sources = assistantRHSources(message);
-  const [preview, setPreview] = useState<DocumentSource | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const previewUrl = preview && documentUrl(preview);
 
   return (
-    <Box $padding={{ all: 'sm' }} $gap="12px">
-      <Text as="h3">Sources sélectionnées</Text>
+    <Box $padding={{ all: 'xs' }} $gap="4px" $css="min-width: 0; width: 100%;">
       {sources.length === 0 && (
-        <Text role="status">
+        <Text role="status" $padding={{ all: 'xs' }}>
           Références documentaires indisponibles pour cette réponse. Les
           anciennes réponses sans association fiable ne permettent pas d’ouvrir
           un document.
@@ -86,74 +98,61 @@ export function AssistantRHSources({ message }: { message?: UIMessage }) {
       )}
       {sources.map((source, index) => {
         const url = documentUrl(source);
-        return (
-          <Box key={index} $gap="6px">
-            <Text as="h4">{source.title}</Text>
-            {source.publisher && <Text>{source.publisher}</Text>}
-            {!url ? (
-              <Text>Document indisponible.</Text>
-            ) : (
-              <>
-                {source.access === 'authenticated' && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setAttempt(0);
-                      setPreview(source);
-                    }}
-                  >
-                    Consulter le document
-                  </Button>
-                )}
-                <StyledLink
-                  $css={documentLinkCss}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {source.access === 'public'
-                    ? 'Consulter la source publique'
-                    : 'Ouvrir dans un nouvel onglet'}
-                </StyledLink>
-              </>
-            )}
+        const content = (
+          <>
+            <Box
+              $direction="row"
+              $align="center"
+              $gap="4px"
+              $margin={{ bottom: 'xxxs' }}
+              $css="color: var(--c--contextuals--content--semantic--neutral--secondary);"
+            >
+              <Text $css="flex-shrink: 0; white-space: nowrap;">
+                {index + 1} ·
+              </Text>
+              <Icon
+                iconName={
+                  source.access === 'public' ? 'language' : 'description'
+                }
+                $theme="neutral"
+                $variation="secondary"
+                $size="md"
+                $css="flex-shrink: 0;"
+                aria-hidden
+              />
+              <Text
+                title={source.publisher}
+                $css="display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+              >
+                {source.publisher ||
+                  (source.access === 'public' ? 'Article' : 'Document')}
+              </Text>
+            </Box>
+            <Text $css="color: var(--c--contextuals--content--semantic--neutral--primary); font-weight: 500; overflow-wrap: anywhere;">
+              {source.title}
+            </Text>
+          </>
+        );
+
+        return url ? (
+          <StyledLink
+            key={index}
+            $css={documentLinkCss}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`${source.title} — nouvel onglet`}
+            title="Ouvrir dans un nouvel onglet"
+          >
+            {content}
+          </StyledLink>
+        ) : (
+          <Box key={index} $css={sourceRowCss}>
+            {content}
+            <Text>Document indisponible.</Text>
           </Box>
         );
       })}
-      {preview && previewUrl && (
-        <Box $gap="8px">
-          <Text as="h4">{preview.title}</Text>
-          <Text role="status">
-            Si l’aperçu ne s’affiche pas, ouvrez le PDF dans un nouvel onglet ou
-            téléchargez-le.
-          </Text>
-          <StyledLink
-            $css={documentLinkCss}
-            href={`${previewUrl}?download=1`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Télécharger le PDF
-          </StyledLink>
-          <Button
-            variant="tertiary"
-            onClick={() => {
-              setAttempt((value) => value + 1);
-            }}
-          >
-            Réessayer l’aperçu
-          </Button>
-          <Button variant="tertiary" onClick={() => setPreview(null)}>
-            Fermer l’aperçu
-          </Button>
-          <iframe
-            key={`${previewUrl}-${attempt}`}
-            title={`Aperçu PDF — ${preview.title}`}
-            src={`${previewUrl}?attempt=${attempt}`}
-            style={{ width: '100%', minHeight: '65vh', border: 0 }}
-          />
-        </Box>
-      )}
     </Box>
   );
 }

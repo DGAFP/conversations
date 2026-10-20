@@ -8,6 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- 🐛(chat) show each RH document as a compact source link opening in a new tab.
+
 - 🐛(chat) make document links visible on the sources panel.
 - ✅(e2e) start explicit test login on the public home page.
 - ✨(chat) consult private RH sources through the session backend
