@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { UIMessage } from 'ai';
 
 import { AssistantRHSources } from '../AssistantRHSources';
@@ -27,30 +27,19 @@ function message(sources: unknown[]): UIMessage {
 }
 
 describe('Assistant RH selected documents', () => {
-  it('opens an application PDF preview and offers protected new-tab/download links', () => {
+  it('renders one protected source link opening in a new tab without a preview', () => {
     render(<AssistantRHSources message={message([source])} />);
     expect(screen.getByText('DGAFP')).toBeInTheDocument();
     const link = screen.getByRole('link', {
-      name: 'Ouvrir dans un nouvel onglet',
+      name: 'Guide des contractuels — nouvel onglet',
     });
     expect(link.getAttribute('href')).toContain(path);
     expect(link).toHaveAttribute('target', '_blank');
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Consulter le document' }),
-    );
-    expect(
-      screen.getByTitle('Aperçu PDF — Guide des contractuels'),
-    ).toHaveAttribute('src', expect.stringContaining(path));
-    expect(
-      screen.getByRole('link', { name: 'Télécharger le PDF' }),
-    ).toHaveAttribute('href', expect.stringContaining('?download=1'));
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Si l’aperçu ne s’affiche pas',
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Réessayer l’aperçu' }));
-    expect(
-      screen.getByTitle('Aperçu PDF — Guide des contractuels'),
-    ).toBeInTheDocument();
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(link).toHaveTextContent(source.title);
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/Aperçu PDF/)).not.toBeInTheDocument();
   });
 
   it('preserves canonical public links without embedding external sites', () => {
