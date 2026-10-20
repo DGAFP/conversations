@@ -10,10 +10,13 @@ and this project adheres to
 
 - ✨(chat) consult private RH sources through the session backend
 
-- Add individual admission, current group corpus grants and signed API delegation.
+- Add individual admission, current group corpus grants and signed API
+  delegation.
 - Keep conversation ministry fixed and hide history when access is withdrawn.
-- Add opt-in local password login before OIDC setup, preserving admission and corpus grants.
-- Report revoked delegation as a rights error, throttle local login per account and sign out sessions without an audit nonce.
+- Add opt-in local password login before OIDC setup, preserving admission and
+  corpus grants.
+- Report revoked delegation as a rights error, throttle local login per account
+  and sign out sessions without an audit nonce.
 
 ## [Unreleased]
 ### Added
