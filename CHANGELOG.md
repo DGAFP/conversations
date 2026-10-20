@@ -8,6 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- 🐛(chat) keep one inline RH source list for documents and public articles.
+
 - 🐛(chat) show each RH document as a compact source link opening in a new tab.
 
 - 🐛(chat) make document links visible on the sources panel.

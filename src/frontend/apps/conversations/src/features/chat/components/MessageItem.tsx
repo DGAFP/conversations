@@ -15,6 +15,10 @@ import SourcesIcon from '@/assets/icons/uikit-custom/sources.svg?react';
 import { Box, Loader, Text } from '@/components';
 import { useConfig } from '@/core/config';
 import { SkippableFileUIPart } from '@/features/chat/api/useChat';
+import {
+  AssistantRHSources,
+  assistantRHSources,
+} from '@/features/chat/components/AssistantRHSources';
 import { AttachmentList } from '@/features/chat/components/AttachmentList';
 import { FeedbackButtons } from '@/features/chat/components/FeedbackButtons';
 import {
@@ -28,6 +32,7 @@ import { SummarizationProgress } from '@/features/chat/components/SummarizationP
 import { ToolInvocationItem } from '@/features/chat/components/ToolInvocationItem';
 import { getMessageCo2Impact } from '@/features/chat/utils/getMessageCo2Impact';
 import { getMessageText } from '@/features/chat/utils/getMessageText';
+import { withoutAssistantRHSources } from '@/features/chat/utils/withoutAssistantRHSources';
 
 import { ChatErrorType } from './ChatError';
 
@@ -290,6 +295,12 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
 
   const textContent = React.useMemo(() => getMessageText(message), [message]);
 
+  const isRHResponse =
+    message.role === 'assistant' && Boolean(config?.ASSISTANT_RH_ENABLED);
+  const rhSources = isRHResponse ? assistantRHSources(message) : [];
+  const displayedText =
+    rhSources.length > 0 ? withoutAssistantRHSources(textContent) : textContent;
+
   const hasTextContent = textContent.trim().length > 0;
 
   // v5 creates the assistant message as soon as the response starts, before any
@@ -368,12 +379,12 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
     // When not streaming, everything is completed as a single block array
     if (!isCurrentlyStreaming) {
       return {
-        completedBlocks: splitIntoBlocks(textContent),
+        completedBlocks: splitIntoBlocks(displayedText),
         pending: '',
       };
     }
-    return splitStreamingContent(textContent);
-  }, [isCurrentlyStreaming, textContent]);
+    return splitStreamingContent(displayedText);
+  }, [isCurrentlyStreaming, displayedText]);
 
   const handleCopy = React.useCallback(() => {
     const html = contentRef.current?.innerHTML;
@@ -467,8 +478,19 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                   {textContent}
                 </Text>
               ) : (
-                // Render completed blocks as markdown, pending block as plain text
-                <BlocksList blocks={completedBlocks} pending={pending} />
+                <>
+                  <BlocksList blocks={completedBlocks} pending={pending} />
+                  {isRHResponse && !isCurrentlyStreaming && (
+                    <Box $margin={{ top: 'sm' }}>
+                      {rhSources.length > 0 && (
+                        <Text as="h3" $size="md" $weight="600">
+                          Sources
+                        </Text>
+                      )}
+                      <AssistantRHSources message={message} />
+                    </Box>
+                  )}
+                </>
               )}
             </Box>
           )}
@@ -603,7 +625,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                         messageId={message.id}
                       />
                     )}
-                  {(sourceParts.length > 0 || config?.ASSISTANT_RH_ENABLED) && (
+                  {sourceParts.length > 0 && !config?.ASSISTANT_RH_ENABLED && (
                     <Button
                       size="nano"
                       variant="tertiary"
@@ -619,9 +641,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                       <Text $theme="neutral" $variation="tertiary">
                         {isSourceOpen !== message.id ? t('Show') : t('Hide')}{' '}
                         {isSourceOpen !== message.id
-                          ? config?.ASSISTANT_RH_ENABLED
-                            ? ''
-                            : `${sourceParts.length} `
+                          ? `${sourceParts.length} `
                           : ''}
                         {sourceParts.length !== 1 ? t('sources') : t('source')}
                       </Text>
@@ -682,6 +702,9 @@ const arePropsEqual = (
     return false;
   }
   if (getMessageText(prevProps.message) !== getMessageText(nextProps.message)) {
+    return false;
+  }
+  if (prevProps.message.metadata !== nextProps.message.metadata) {
     return false;
   }
   if (prevProps.message.role !== nextProps.message.role) {
