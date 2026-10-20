@@ -26,7 +26,9 @@ Le navigateur fournit des identifiants applicatifs et un ordinal. Les éventuels
 
 `Range` et `If-Range` sont ignorés : chaque demande authentifiée renvoie un PDF complet `200`, conformément à D2 ; aucun 206/416 n’est annoncé. `?download=1` utilise la même autorisation et une disposition `attachment` pour les clients qui demandent explicitement un téléchargement.
 
-Le panneau des sources affiche une liste compacte, comme celle des articles : titre cliquable et organisme disponible. Chaque entrée ouvre un nouvel onglet, sans lecteur embarqué ni boutons de consultation supplémentaires. Pour un PDF interne, le navigateur utilise l’URL applicative protégée et son lecteur PDF ; aucun chargement intégral en base64 ou URL blob n’est imposé. Les sources publiques gardent leurs liens canoniques. Une référence invalide ou absente reste explicitement indisponible. Cette présentation remplace l’aperçu intégré initial selon le cadrage UX du 20 octobre 2026.
+Une seule liste « Sources » apparaît directement sous la réponse RH : titre cliquable et organisme disponible, pour les documents comme pour les articles. Le panneau latéral et son bouton ne sont plus proposés en mode RH. Quand les métadonnées autoritatives sont disponibles, la présentation remplace uniquement le bloc réservé `\n\n---\n**Sources :**\n` ajouté par l’API ; les citations du corps de réponse et le texte stocké restent inchangés. Sans association fiable, les références historiques restent affichées sans inventer de lien et un état d’indisponibilité est explicite.
+
+Chaque source ouvre un nouvel onglet. Les PDF internes utilisent l’URL applicative protégée et le lecteur PDF du navigateur ; les articles conservent leur URL canonique publique. Cette présentation remplace le panneau et l’aperçu intégré initiaux selon le cadrage UX du 20 octobre 2026.
 
 ## Déploiement et ressources
 
@@ -40,7 +42,7 @@ Erreurs : 401 pour session absente/expirée ; 403 pour admission/session refusé
 
 ## Preuves et recette restante
 
-Les tests utilisent une base PostgreSQL 17 jetable locale sur `127.0.0.1:55509`, des sessions individuelles synthétiques, des clés Ed25519 temporaires et des réponses API simulées. Ils couvrent le vrai SDK JSON/SSE, la persistance/relecture, les références UI forgées, l’isolation entre utilisateurs du même groupe, la perte de droits/admission, la déconnexion, les headers, l’absence de redirection, les plages ignorées et la fermeture bornée. Les tests frontend couvrent le lien unique par source, le nouvel onglet, l’absence de lecteur embarqué, les liens publics et les anciennes réponses.
+Les tests utilisent une base PostgreSQL 17 jetable locale sur `127.0.0.1:55509`, des sessions individuelles synthétiques, des clés Ed25519 temporaires et des réponses API simulées. Ils couvrent le vrai SDK JSON/SSE, la persistance/relecture, les références UI forgées, l’isolation entre utilisateurs du même groupe, la perte de droits/admission, la déconnexion, les headers, l’absence de redirection, les plages ignorées et la fermeture bornée. Les tests frontend couvrent le lien unique par source, le nouvel onglet, l’absence de lecteur embarqué, les liens publics et les anciennes réponses, la liste mixte documents/articles, le remplacement du seul bloc réservé et l’arrivée tardive des métadonnées.
 
 Avant de clôturer #594 : appliquer cette migration avec le compte de déploiement, déployer les révisions API/fork validées, puis consigner leurs SHA et l’environnement. Tester dans un vrai navigateur après stream, échanges successifs, rechargement et reconnexion ; ouvrir un PDF legacy et un PDF S3 réel depuis la liste des sources dans un nouvel onglet ; vérifier les liens publics, les erreurs, un gros PDF, l’annulation, le logout/désactivation et le retrait/rétablissement des droits. Vérifier ingress/headers/cookies, identité et réseau privé. Les preuves locales ne remplacent pas cette recette staging ; aucun compte runtime ni bucket n’est modifié par cette branche.
 

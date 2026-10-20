@@ -13,6 +13,11 @@ import {
   splitStreamingContent,
 } from '../MessageItem';
 
+vi.mock('react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router')>()),
+  useNavigate: () => vi.fn(),
+}));
+
 const TEST_CO2_IMPACT_KG = 0.00002191613089507352;
 
 // Mock react-markdown (ESM module)
@@ -36,7 +41,9 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-const mockConfig: { DOCS_BASE_URL?: string } = { DOCS_BASE_URL: undefined };
+const mockConfig: { DOCS_BASE_URL?: string; ASSISTANT_RH_ENABLED?: boolean } = {
+  DOCS_BASE_URL: undefined,
+};
 vi.mock('@/core/config', () => ({
   useConfig: () => ({ data: mockConfig }),
 }));
@@ -405,6 +412,145 @@ describe('MessageItem', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockConfig.DOCS_BASE_URL = undefined;
+    mockConfig.ASSISTANT_RH_ENABLED = false;
+  });
+
+  describe('inline RH sources', () => {
+    const documentPath = '/api/v1.0/chats/chat-1/messages/msg-1/sources/0/';
+    const articleUrl =
+      'https://www.service-public.fr/particuliers/vosdroits/F1';
+    const answer = 'Réponse avec sa citation dans le texte.';
+    const text = `${answer}\n\n---\n**Sources :**\n1. Guide RH\n2. Article public`;
+    const rhMessage = {
+      ...defaultProps.message,
+      parts: [{ type: 'text' as const, text }],
+      metadata: {
+        assistant_rh: {
+          sources: [
+            {
+              title: 'Guide RH',
+              publisher: 'DGAFP',
+              url: documentPath,
+              access: 'authenticated',
+            },
+            {
+              title: 'Article public',
+              publisher: 'Service-Public',
+              url: articleUrl,
+              access: 'public',
+            },
+          ],
+        },
+      },
+    };
+
+    it('replaces only the API footer with one list for documents and articles', async () => {
+      mockConfig.ASSISTANT_RH_ENABLED = true;
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem {...defaultProps} message={rhMessage} />,
+        );
+      });
+      expect(screen.getByTestId('markdown-content')).toHaveTextContent(answer);
+      expect(screen.getByTestId('markdown-content')).not.toHaveTextContent(
+        'Sources :',
+      );
+      expect(screen.getAllByRole('heading', { name: 'Sources' })).toHaveLength(
+        1,
+      );
+      expect(screen.getAllByRole('link')).toHaveLength(2);
+      expect(
+        screen.getByRole('link', { name: 'Guide RH — nouvel onglet' }),
+      ).toHaveAttribute('href', expect.stringContaining(documentPath));
+      expect(
+        screen.getByRole('link', { name: 'Article public — nouvel onglet' }),
+      ).toHaveAttribute('href', articleUrl);
+      expect(
+        screen.queryByRole('button', { name: /Show.*source/ }),
+      ).not.toBeInTheDocument();
+      expect(rhMessage.parts[0].text).toBe(text);
+    });
+
+    it('updates when authoritative metadata arrives without changing the text', async () => {
+      mockConfig.ASSISTANT_RH_ENABLED = true;
+      const { rerender } = renderWithProviders(
+        <MessageItem
+          {...defaultProps}
+          message={{ ...rhMessage, metadata: undefined }}
+        />,
+      );
+      await act(async () => {});
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Références documentaires indisponibles',
+      );
+      await act(async () => {
+        rerender(
+          withProviders(<MessageItem {...defaultProps} message={rhMessage} />),
+        );
+      });
+      expect(screen.getAllByRole('link')).toHaveLength(2);
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.getByTestId('markdown-content')).not.toHaveTextContent(
+        'Sources :',
+      );
+    });
+
+    it('shows the single source list when streaming finishes', async () => {
+      mockConfig.ASSISTANT_RH_ENABLED = true;
+      const { rerender } = renderWithProviders(
+        <MessageItem
+          {...defaultProps}
+          message={rhMessage}
+          isLastAssistantMessage
+          status="streaming"
+        />,
+      );
+      await act(async () => {});
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      await act(async () => {
+        rerender(
+          withProviders(
+            <MessageItem
+              {...defaultProps}
+              message={rhMessage}
+              isLastAssistantMessage
+              status="ready"
+            />,
+          ),
+        );
+      });
+      expect(screen.getAllByRole('link')).toHaveLength(2);
+      expect(screen.getAllByRole('heading', { name: 'Sources' })).toHaveLength(
+        1,
+      );
+      expect(screen.getByTestId('markdown-content')).not.toHaveTextContent(
+        'Sources :',
+      );
+    });
+
+    it('keeps the source panel action outside RH mode', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              parts: [
+                ...defaultProps.message.parts,
+                { type: 'source-url', sourceId: '1', url: articleUrl },
+              ],
+            }}
+          />,
+        );
+      });
+      expect(
+        screen.getByRole('button', { name: 'Show 1 source' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Sources' }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe('Edit in Docs button', () => {
