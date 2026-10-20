@@ -62,7 +62,8 @@ class AssistantRHAdmissionMiddleware(MiddlewareMixin):
     def process_response(self, request, response):
         """Keep individual API responses out of shared caches."""
         if settings.ASSISTANT_RH_ENABLED and request.path.startswith("/api/"):
-            response["Cache-Control"] = "no-store"
+            if response.get("Cache-Control") != "private, no-store":
+                response["Cache-Control"] = "no-store"
         return response
 
 

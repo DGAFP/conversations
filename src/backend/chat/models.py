@@ -278,6 +278,24 @@ class ChatConversation(BaseModel):
         return bool(updated)
 
 
+class AssistantRHMessageRun(BaseModel):
+    """Server-owned association shared by document access and future feedback (#595)."""
+
+    conversation = models.ForeignKey(
+        ChatConversation, related_name="assistant_rh_runs", on_delete=models.CASCADE
+    )
+    message_id = models.CharField(max_length=200)
+    completion_id = models.CharField(max_length=137)
+    sources = models.JSONField(default=list)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conversation", "message_id"], name="rh_message_run_unique"
+            ),
+        ]
+
+
 class ChatConversationAttachment(BaseModel):
     """
     Model representing a file attachment.

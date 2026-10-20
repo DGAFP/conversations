@@ -33,6 +33,7 @@ def conversation_fixture():
 def service_fixture(conversation):
     """Instantiate AIAgentService without __init__, injecting what the method needs."""
     service = object.__new__(AIAgentService)
+    service._rh_sources = None
     service.conversation = conversation
     service.user = SimpleNamespace(pk=1)
     service.conversation_agent = SimpleNamespace(
