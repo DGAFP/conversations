@@ -8,6 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- 🐛(chat) make document links visible on the sources panel.
+- ✅(e2e) start explicit test login on the public home page.
 - ✨(chat) consult private RH sources through the session backend
 - Add RH to the logo in the headers, sidebar and landing page.
 
