@@ -8,6 +8,7 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- ✨(chat) consult private RH sources through the session backend
 - Add RH to the logo in the headers, sidebar and landing page.
 
 - Add individual admission, current group corpus grants and signed API
@@ -19,7 +20,6 @@ and this project adheres to
   account and sign out sessions without an audit nonce.
 
 ## [Unreleased]
-
 ### Added
 
 - 👷(ci) prepare guarded staging delivery to Scaleway Kapsule

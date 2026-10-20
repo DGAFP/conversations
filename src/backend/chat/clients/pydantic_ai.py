@@ -152,6 +152,7 @@ from chat.ai_sdk_types import (
     UIMessage,
 )
 from chat.assistant_rh_delegation import delegation_refused
+from chat.assistant_rh_sources import SourceCapture
 from chat.clients.async_to_sync import convert_async_generator_to_sync
 from chat.clients.conversation_reindexer import reindex_conversation
 from chat.clients.error_classification import (
@@ -328,6 +329,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         # client in the `start` frame and persisted with the message. Set per
         # stream by _stream_content.
         self._model_response_message_id: str | None = None
+        self._rh_sources = SourceCapture() if settings.ASSISTANT_RH_ENABLED else None
 
         self._support_streaming = True
         if (streaming := self.model_configuration.supports_streaming) is not None:
@@ -384,7 +386,12 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
             capabilities=_capabilities,
             deps_type=ContextDeps,
             delegation_context=(
-                (user.pk, session.session_key if session else None, conversation.ministry)
+                (
+                    user.pk,
+                    session.session_key if session else None,
+                    conversation.ministry,
+                    self._rh_sources,
+                )
                 if settings.ASSISTANT_RH_ENABLED
                 else None
             ),
@@ -1674,6 +1681,20 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         # folds the conversation's cumulative total into usage["co2_impact"].
         message_co2_impact = usage["co2_impact"]
 
+        if self._rh_sources is not None:
+            info = self._rh_sources.ui_metadata(
+                self.conversation.pk, state.model_response_message_id
+            )
+            state.ui_sources = [
+                SourceUrlUIPart(
+                    type="source-url",
+                    sourceId=f"rh-{index}",
+                    url=source["url"],
+                    title=source["title"],
+                )
+                for index, source in enumerate(info["sources"])
+            ]
+
         await sync_to_async(self._prepare_update_conversation)(
             final_output=new_messages,
             usage=usage,
@@ -1684,7 +1705,20 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
 
         generated_title = await self._generate_title_if_needed()
 
-        await sync_to_async(self.conversation.save)()
+        await sync_to_async(self._save_completed_conversation)()
+
+        for source in state.ui_sources if self._rh_sources is not None else []:
+            yield events_v4.SourcePart(id=source.sourceId, url=source.url, title=source.title)
+        if self._rh_sources is not None:
+            yield events_v4.MessageAnnotationPart(
+                annotations=[
+                    {
+                        "assistant_rh": self._rh_sources.ui_metadata(
+                            self.conversation.pk, state.model_response_message_id
+                        ),
+                    }
+                ]
+            )
 
         cooldown_seconds = await sync_to_async(record_and_compute_cooldown)(
             self.user.pk, self.conversation_agent.configuration, request_tokens
@@ -1917,6 +1951,14 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         else:
             logger.warning("model_response_message_id is None")
 
+        if self._rh_sources is not None:
+            _output_ui_message.metadata = {
+                **(_output_ui_message.metadata or {}),
+                "assistant_rh": self._rh_sources.ui_metadata(
+                    self.conversation.pk, model_response_message_id
+                ),
+            }
+
         co2_impact = usage["co2_impact"]
         if co2_impact:
             _output_ui_message.metadata = {
@@ -1943,6 +1985,20 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         )
         logger.debug("final_output_json: %s", final_output_json)
         self.conversation.pydantic_messages += final_output_json
+
+    def _save_completed_conversation(self):
+        """Publish the assistant message and its source authority in one transaction."""
+        from django.db import transaction  # noqa: PLC0415 # pylint: disable=import-outside-toplevel
+
+        with transaction.atomic():
+            self.conversation.save()
+            if self._rh_sources is not None and self._rh_sources.valid:
+                models.AssistantRHMessageRun.objects.create(
+                    conversation=self.conversation,
+                    message_id=self._model_response_message_id,
+                    completion_id=self._rh_sources.completion_id,
+                    sources=self._rh_sources.sources,
+                )
 
     async def _generate_title(self) -> str | None:
         """Generate a title for the conversation using LLM based on first messages."""

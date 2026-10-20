@@ -2,6 +2,7 @@
 skip =
     # French operational documentation is outside the English dictionary.
     ./docs/assistant-rh/identity.md,
+    ./docs/assistant-rh/documents.md,
     ./git/,
     **/*.pdf,
     **/*.po,

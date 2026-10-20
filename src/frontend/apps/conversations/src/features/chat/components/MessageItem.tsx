@@ -603,7 +603,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                         messageId={message.id}
                       />
                     )}
-                  {sourceParts.length > 0 && (
+                  {(sourceParts.length > 0 || config?.ASSISTANT_RH_ENABLED) && (
                     <Button
                       size="nano"
                       variant="tertiary"
@@ -619,7 +619,9 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                       <Text $theme="neutral" $variation="tertiary">
                         {isSourceOpen !== message.id ? t('Show') : t('Hide')}{' '}
                         {isSourceOpen !== message.id
-                          ? `${sourceParts.length} `
+                          ? config?.ASSISTANT_RH_ENABLED
+                            ? ''
+                            : `${sourceParts.length} `
                           : ''}
                         {sourceParts.length !== 1 ? t('sources') : t('source')}
                       </Text>

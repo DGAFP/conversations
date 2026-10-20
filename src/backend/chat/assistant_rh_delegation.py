@@ -114,8 +114,9 @@ class DelegationAuth(httpx.Auth):
 
     requires_request_body = True
 
-    def __init__(self, user_id, session_key, ministry):
+    def __init__(self, user_id, session_key, ministry, capture=None):
         self.user_id, self.session_key, self.ministry = user_id, session_key, ministry
+        self.capture = capture
 
     async def async_auth_flow(self, request):
         # A modified client/config cannot use this signer to change corpus or host.
@@ -134,17 +135,22 @@ class DelegationAuth(httpx.Auth):
         assertion = await sync_to_async(sign_assertion)(
             self.user_id, self.session_key, self.ministry
         )
+        # The metadata tee observes wire bytes before HTTPX decoding.
+        request.headers["Accept-Encoding"] = "identity"
         request.headers["Authorization"] = "Bearer " + assertion
         request.headers["X-Client-Request-Id"] = uuid.uuid4().hex
         logger.info("assistant_rh_request request_id=%s", request.headers["X-Client-Request-Id"])
-        yield request
+        response = yield request
+        if self.capture is not None and response.status_code == 200:
+            self.capture.attach(response)
 
 
 def delegated_model(configuration, context):
     """No static bearer, client cache, provider fallback or browser-supplied identity."""
     if context is None:
         raise PermissionDenied("Session de délégation requise.")
-    user_id, session_key, ministry = context
+    user_id, session_key, ministry = context[:3]
+    capture = context[3] if len(context) > 3 else None
     if configuration.model_name != MODEL_PREFIX + ministry:
         raise PermissionDenied("Modèle différent du ministère de la conversation.")
     if not settings.ASSISTANT_RH_API_URL:
@@ -155,7 +161,7 @@ def delegated_model(configuration, context):
         base_url=settings.ASSISTANT_RH_API_URL,
         max_retries=0,
         http_client=httpx.AsyncClient(
-            auth=DelegationAuth(user_id, session_key, ministry),
+            auth=DelegationAuth(user_id, session_key, ministry, capture),
             follow_redirects=False,
             timeout=httpx.Timeout(600, connect=5),
         ),

@@ -21,6 +21,7 @@ from chat.views import (
     LLMConfigurationView,
     ModelHealthView,
 )
+from chat.views.assistant_rh_documents import document as assistant_rh_document
 
 # - Main endpoints
 router = DefaultRouter()
@@ -41,6 +42,12 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/",
         include(
             [
+                path(
+                    "chats/<uuid:conversation_id>/messages/<str:message_id>/"
+                    "sources/<int:source_index>/",
+                    assistant_rh_document,
+                    name="assistant-rh-document",
+                ),
                 *router.urls,
                 path("authenticate/", local.login),
                 path("logout/", local.logout),

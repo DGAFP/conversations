@@ -47,6 +47,7 @@ import {
   KEY_LIST_PROJECT,
   ProjectsResponse,
 } from '@/features/chat/api/useProjects';
+import { AssistantRHSources } from '@/features/chat/components/AssistantRHSources';
 import { ChatError, ChatErrorType } from '@/features/chat/components/ChatError';
 import { ImageProcessingUnavailableBanner } from '@/features/chat/components/ImageProcessingUnavailableBanner';
 import { InputChat } from '@/features/chat/components/InputChat';
@@ -449,6 +450,7 @@ export const Chat = ({
 
   // Précharger les métadonnées des sources dès que les messages arrivent
   useEffect(() => {
+    if (config?.ASSISTANT_RH_ENABLED) return;
     messages.forEach((message) => {
       if (message.parts) {
         const sourceParts = message.parts.filter(
@@ -494,7 +496,8 @@ export const Chat = ({
   }, [isSourceOpen, messages]);
 
   const isSourcesPanelOpen =
-    Boolean(isSourceOpen) && selectedSourceParts.length > 0;
+    Boolean(isSourceOpen) &&
+    (selectedSourceParts.length > 0 || config?.ASSISTANT_RH_ENABLED);
 
   const sourcesPanelContent = isSourcesPanelOpen ? (
     <Box
@@ -537,7 +540,14 @@ export const Chat = ({
         />
       </Box>
       <HorizontalSeparator $withPadding={false} />
-      <SourceItemList parts={selectedSourceParts} getMetadata={getMetadata} />
+      {config?.ASSISTANT_RH_ENABLED ? (
+        <AssistantRHSources
+          key={isSourceOpen}
+          message={messages.find((message) => message.id === isSourceOpen)}
+        />
+      ) : (
+        <SourceItemList parts={selectedSourceParts} getMetadata={getMetadata} />
+      )}
     </Box>
   ) : null;
 
