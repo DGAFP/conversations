@@ -12,6 +12,8 @@ La migration `chat.0016_assistantrhmessagerun` crée `AssistantRHMessageRun` : c
 
 Les messages exposent uniquement un titre, l’organisme disponible et un lien public ou applicatif. Les informations absentes (section, extrait, page) ne sont pas inventées ; #223 reste nécessaire pour le repérage précis. Les mêmes parts et métadonnées sont émises dans le flux final et relues depuis la base après rechargement.
 
+Pour les URL publiques validées, `publisher` affiche le type de source « Légifrance » ou « Service-Public », et `title` contient le nom de l’article ou de la fiche fourni par l’API. Légifrance inclut le numéro d’article lorsqu’il est disponible. L’affichage normalise aussi le type des sources déjà enregistrées à partir de leur URL validée ; leur titre enregistré est conservé.
+
 ## Lecture applicative
 
 `GET /api/v1.0/chats/{conversation}/messages/{message}/sources/{ordinal}/`
