@@ -110,6 +110,13 @@ class SourceCapture:
             return {"status": "unavailable", "sources": []}
         sources = []
         for index, source in enumerate(self.sources):
+            url = public_url(source["url"])
+            publisher = source["publisher"]
+            hostname = urlsplit(url).hostname if url else None
+            if hostname in {"www.legifrance.gouv.fr", "legifrance.gouv.fr"}:
+                publisher = "Légifrance"
+            elif hostname in {"www.service-public.fr", "www.service-public.gouv.fr"}:
+                publisher = "Service-Public"
             path = reverse(
                 "assistant-rh-document",
                 kwargs={
@@ -121,9 +128,9 @@ class SourceCapture:
             sources.append(
                 {
                     "title": source["title"],
-                    "publisher": source["publisher"],
-                    "url": source["url"] or path,
-                    "access": "public" if source["url"] else "authenticated",
+                    "publisher": publisher,
+                    "url": url or path,
+                    "access": "public" if url else "authenticated",
                 }
             )
         return {"status": "available", "sources": sources}

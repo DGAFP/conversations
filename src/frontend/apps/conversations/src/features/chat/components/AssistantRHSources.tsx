@@ -84,6 +84,23 @@ function documentUrl(source: DocumentSource): string | null {
   return null;
 }
 
+function documentPublisher(source: DocumentSource, url: string | null): string {
+  if (source.access === 'public' && url) {
+    const hostname = new URL(url).hostname;
+    if (['www.legifrance.gouv.fr', 'legifrance.gouv.fr'].includes(hostname)) {
+      return 'Légifrance';
+    }
+    if (
+      ['www.service-public.fr', 'www.service-public.gouv.fr'].includes(hostname)
+    ) {
+      return 'Service-Public';
+    }
+  }
+  return (
+    source.publisher || (source.access === 'public' ? 'Article' : 'Document')
+  );
+}
+
 export function AssistantRHSources({ message }: { message?: UIMessage }) {
   const sources = assistantRHSources(message);
 
@@ -98,6 +115,7 @@ export function AssistantRHSources({ message }: { message?: UIMessage }) {
       )}
       {sources.map((source, index) => {
         const url = documentUrl(source);
+        const publisher = documentPublisher(source, url);
         const content = (
           <>
             <Box
@@ -121,11 +139,10 @@ export function AssistantRHSources({ message }: { message?: UIMessage }) {
                 aria-hidden
               />
               <Text
-                title={source.publisher}
+                title={publisher}
                 $css="display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
               >
-                {source.publisher ||
-                  (source.access === 'public' ? 'Article' : 'Document')}
+                {publisher}
               </Text>
             </Box>
             <Text $css="color: var(--c--contextuals--content--semantic--neutral--primary); font-weight: 500; overflow-wrap: anywhere;">

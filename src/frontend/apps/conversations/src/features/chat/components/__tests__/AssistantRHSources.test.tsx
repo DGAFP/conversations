@@ -76,4 +76,51 @@ describe('Assistant RH selected documents', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.getByText('Document indisponible.')).toBeInTheDocument();
   });
+
+  it.each([
+    [
+      'Légifrance',
+      'Article L332-1 — Code du travail',
+      'https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI123',
+      'DGAFP',
+    ],
+    [
+      'Légifrance',
+      'Article 1 — Décret du 17 janvier 1986',
+      'https://legifrance.gouv.fr/loda/article_lc/LEGIARTI456',
+      '',
+    ],
+    [
+      'Service-Public',
+      "Congés annuels d'un agent contractuel",
+      'https://www.service-public.gouv.fr/particuliers/vosdroits/F1',
+      'Service-Public (Scaleway)',
+    ],
+    [
+      'Service-Public',
+      "Congés annuels d'un agent contractuel",
+      'https://www.service-public.fr/particuliers/vosdroits/F1',
+      '',
+    ],
+  ])(
+    'renders %s as the source type and the article name as the title',
+    (publisher, title, url, storedPublisher) => {
+      const restored = JSON.parse(
+        JSON.stringify(
+          message([
+            { title, publisher: storedPublisher, url, access: 'public' },
+          ]),
+        ),
+      ) as UIMessage;
+      render(<AssistantRHSources message={restored} />);
+      const type = screen.getByText(publisher);
+      expect(type).toHaveAttribute('title', publisher);
+      const link = screen.getByRole('link', {
+        name: `${title} — nouvel onglet`,
+      });
+      expect(link).toHaveAttribute('href', url);
+      expect(link).toHaveTextContent(title);
+      expect(link).toContainElement(type);
+    },
+  );
 });

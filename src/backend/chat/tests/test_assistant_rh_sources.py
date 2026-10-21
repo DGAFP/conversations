@@ -112,6 +112,40 @@ def test_storage_urls_and_unknown_metadata_are_not_exported():
     assert capture.sources[0]["title"] == "Guide"
 
 
+@pytest.mark.parametrize(
+    "hostname,publisher,title",
+    [
+        (
+            "www.legifrance.gouv.fr",
+            "Légifrance",
+            "Article L332-1 — Code du travail",
+        ),
+        ("legifrance.gouv.fr", "Légifrance", "Article 1 — Décret du 17 janvier 1986"),
+        ("www.service-public.fr", "Service-Public", "Congés annuels d'un agent contractuel"),
+        ("www.service-public.gouv.fr", "Service-Public", "Congés annuels d'un agent contractuel"),
+    ],
+)
+def test_ui_metadata_uses_public_source_type_and_preserves_article_title(
+    hostname, publisher, title
+):
+    """Present public sources using the website name and the API article title."""
+    payload = json.loads(json.dumps(PAYLOAD))
+    url = f"https://{hostname}/article"
+    payload["x_assistant_rh"]["sources"][1].update(
+        {"publisher": "DGAFP", "title": title, "url": url}
+    )
+    capture = SourceCapture()
+    capture.accept(payload)
+    info = capture.ui_metadata("11111111-1111-4111-8111-111111111111", "message-1")
+    assert info["sources"][0]["publisher"] == "DGAFP"
+    assert info["sources"][1] == {
+        "title": title,
+        "publisher": publisher,
+        "url": url,
+        "access": "public",
+    }
+
+
 @pytest.mark.asyncio
 async def test_unfinished_stream_and_oversized_metadata_do_not_enable_documents():
     """Unfinished stream and oversized metadata do not enable documents."""

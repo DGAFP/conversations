@@ -8,6 +8,7 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- 🐛(chat) show public website types and article names in RH sources.
 - 🔒️(dependencies) update certifi and pillow for staging security fixes.
 
 - 🐛(chat) keep one inline RH source list for documents and public articles.
