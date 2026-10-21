@@ -121,12 +121,20 @@ override-dependencies = [
     "urllib3>=2.8.0", # CVE-2026-97687, CVE-2026-97689
     "cryptography>=50.0.0", # GHSA-g6cj-pr64-35w5
     "joserfc>=1.6.8", # CVE-2026-49852
-    "pillow>=12.2.0", #CVE-2026-40192
+    "pillow>=13.0.0", # CVE-2026-112403 and related image decoding fixes
+    "certifi>=2026.10.19", # GHSA-6q48-6c7w-9gw2
     "python-multipart>=0.0.31", # CVE-2026-53539
     "starlette>=1.3.1", # CVE-2026-48818, CVE-2026-54283,
     "pyjwt>=2.14.0", #CVE-2026-48526
     "pydantic-settings>=2.14.2", # GHSA-4xgf-cpjx-pc3j
 ]
+
+# Allow only these security fixes through the normal seven-day release delay.
+# This fixed cutoff admits known releases only. Remove these entries once both
+# fixes have passed the normal delay so later upgrades use the shared policy.
+[tool.uv.exclude-newer-package]
+certifi = "2026-10-21T23:59:59Z"
+pillow = "2026-10-21T23:59:59Z"
 
 [tool.uv.build-backend]
 module-root = ""
