@@ -21,6 +21,9 @@ def main():
     sha = os.environ["GITHUB_SHA"]
     if not re.fullmatch(r"[a-f0-9]{40}", sha):
         raise RuntimeError("Invalid commit")
+    frontend_sha = os.environ.get("FRONTEND_SHA", sha)
+    if not re.fullmatch(r"[a-f0-9]{40}", frontend_sha):
+        raise RuntimeError("Invalid frontend commit")
     numbers = [os.environ["GITHUB_RUN_NUMBER"], os.environ["GITHUB_RUN_ATTEMPT"]]
     if not all(re.fullmatch(r"[1-9][0-9]*", number) for number in numbers):
         raise RuntimeError("Invalid release sequence")
@@ -43,7 +46,7 @@ def main():
         else:
             args += ["-f", "deploy/kapsule/staging.yaml", "--set-string",
                      "image.tag=sha-" + sha + "@" + os.environ["BACKEND_DIGEST"],
-                     "--set-string", "frontend.image.tag=sha-" + sha + "@" + os.environ["FRONTEND_DIGEST"]]
+                     "--set-string", "frontend.image.tag=sha-" + frontend_sha + "@" + os.environ["FRONTEND_DIGEST"]]
         rendered = subprocess.check_output(args, text=True)
         values = json.loads("\n".join(line for line in rendered.splitlines()
                                       if line.strip() and not line.startswith(("#", "---"))))

@@ -8,6 +8,8 @@ class AssistantRHSettings:
 
     ASSISTANT_RH_ENABLED = values.BooleanValue(False, environ_prefix=None)
     ASSISTANT_RH_LOCAL_LOGIN_ENABLED = values.BooleanValue(False, environ_prefix=None)
+    ASSISTANT_RH_OIDC_ENABLED = values.BooleanValue(False, environ_prefix=None)
+    ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS = values.ListValue([], environ_prefix=None)
     ASSISTANT_RH_API_URL = values.Value("", environ_prefix=None)
     ASSISTANT_RH_DELEGATION_ISSUER = values.Value("", environ_prefix=None)
     ASSISTANT_RH_API_AUDIENCE = values.Value("assistant-rh-api", environ_prefix=None)
@@ -19,12 +21,14 @@ class AssistantRHSettings:
     def setup(cls):
         """Allow the temporary password mode to start without any OIDC provider."""
         super().setup()  # pylint: disable=no-member
-        if cls.ASSISTANT_RH_ENABLED and cls.ASSISTANT_RH_LOCAL_LOGIN_ENABLED:
-            cls.AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
+        if cls.ASSISTANT_RH_ENABLED:
+            if cls.ASSISTANT_RH_LOCAL_LOGIN_ENABLED and not cls.ASSISTANT_RH_OIDC_ENABLED:
+                cls.AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
             cls.REST_FRAMEWORK = {
                 **cls.REST_FRAMEWORK,
                 "DEFAULT_AUTHENTICATION_CLASSES": (
                     "rest_framework.authentication.SessionAuthentication",
                 ),
             }
-            cls.FRONTEND_SILENT_LOGIN_ENABLED = False
+            if cls.ASSISTANT_RH_LOCAL_LOGIN_ENABLED:
+                cls.FRONTEND_SILENT_LOGIN_ENABLED = False
