@@ -8,7 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
-- ✨(auth) connect staging to ProConnect with manual admission and corpus grants.
+- ✨(auth) connect staging to ProConnect with manual admission and corpus
+  grants.
 - 🔒️(auth) validate OIDC claims and restrict local login to the staging probe.
 - 🔒️(dependencies) update backend packages and Alpine runtime security fixes.
 

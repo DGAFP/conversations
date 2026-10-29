@@ -9,6 +9,7 @@ import argparse
 import base64
 import json
 import subprocess
+import sys
 
 PROJECT = "c1d3f629-d08d-439d-ba76-f115ea06e579"
 SERVER = "https://fce3ddcb-b9ff-49fb-8b7d-aca605272b0a.api.k8s.fr-par.scw.cloud:6443"
@@ -63,7 +64,7 @@ def main():
         }
         # stdin + server-side apply : pas de fichier, ni d'annotation last-applied contenant les valeurs.
         run(kube + ["apply", "--server-side", "--field-manager=proconnect-staging", "-f", "-", "-o", "json"], json.dumps(resource).encode())
-    print(json.dumps({"staging_verified": True, "revisions": revisions, "applied": args.apply}))
+    sys.stdout.write(json.dumps({"staging_verified": True, "revisions": revisions, "applied": args.apply}) + "\n")
 
 
 if __name__ == "__main__":
