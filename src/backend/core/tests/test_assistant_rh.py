@@ -368,6 +368,68 @@ def test_local_login_throttled_and_configured_explicitly(rh, local_account, clie
     assert client.get(BASE + "config/").json()["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] is False
 
 
+def test_oidc_is_public_login_with_allowlisted_technical_fallback(rh, local_account):
+    """ProConnect is public; the existing probe retains only its explicit password path."""
+    rh.settings.ASSISTANT_RH_OIDC_ENABLED = True
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS = [local_account["username"]]
+    client = Client(enforce_csrf_checks=True)
+    assert client.get(BASE + "authenticate/")["Location"].startswith("http://oidc.test/")
+    config = client.get(BASE + "config/").json()
+    assert config["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] is False
+    assert "ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS" not in config
+    assert client.post(BASE + "local/authenticate/", local_account).status_code == 403
+    assert client.get(BASE + "local/authenticate/").status_code == 200
+    response = client.post(
+        BASE + "local/authenticate/",
+        local_account,
+        HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
+    )
+    assert response.status_code == 302
+    assert sign_assertion(rh.user.pk, client.session.session_key, "matte")
+    assert client.get(BASE + "logout/").status_code == 200
+    assert client.post(BASE + "logout/").status_code == 403
+    response = client.post(BASE + "logout/", HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value)
+    assert response.status_code == 302
+    assert "_auth_user_id" not in client.session
+
+
+@pytest.mark.parametrize("staff", [False, True])
+def test_oidc_technical_login_does_not_admit_other_local_accounts(rh, local_account, client, staff):
+    """Admission and a valid password do not bypass the technical account allowlist."""
+    rh.settings.ASSISTANT_RH_OIDC_ENABLED = True
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS = ["probe@example.invalid"]
+    rh.user.is_staff = staff
+    rh.user.is_superuser = staff
+    rh.user.save()
+    assert client.post(BASE + "local/authenticate/", local_account).status_code == 200
+    assert "_auth_user_id" not in client.session
+
+
+@pytest.mark.usefixtures("local_account")
+def test_explicit_local_login_is_disabled_without_the_rh_flag(rh, client):
+    """The additional route cannot enable a password flow in the upstream mode."""
+    rh.settings.ASSISTANT_RH_ENABLED = False
+    assert client.get(BASE + "local/authenticate/").status_code == 404
+    rh.settings.ASSISTANT_RH_ENABLED = True
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ENABLED = False
+    assert client.get(BASE + "local/authenticate/").status_code == 404
+
+
+def test_oidc_session_logout_visits_provider_while_technical_login_remains_enabled(rh, client):
+    """Logout follows the actual OIDC session even when the probe can still log in locally."""
+    rh.settings.ASSISTANT_RH_OIDC_ENABLED = True
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ENABLED = True
+    rh.settings.OIDC_OP_LOGOUT_ENDPOINT = "https://oidc.test/session/end"
+    client.force_login(rh.user, backend="core.authentication.backends.OIDCAuthenticationBackend")
+    session = client.session
+    session["oidc_id_token"] = "synthetic-id-token"
+    session.save()
+    response = client.get(BASE + "logout/")
+    assert response.status_code == 302
+    assert response["Location"].startswith("https://oidc.test/session/end?")
+    assert "post_logout_redirect_uri=" in response["Location"]
+
+
 @pytest.mark.usefixtures("rh")
 def test_admin_can_provision_local_account_without_staff_rights():
     """The standard admin creation form must accept the actual login field."""
