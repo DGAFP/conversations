@@ -18,6 +18,7 @@ backend:
     DB_USER: conversations_app
     ASSISTANT_RH_ENABLED: "true"
     ASSISTANT_RH_LOCAL_LOGIN_ENABLED: "true"
+    ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT: "true"
     ASSISTANT_RH_OIDC_ENABLED: "true"
     ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS: observability-staging@assistant-rh.invalid
     FRONTEND_SILENT_LOGIN_ENABLED: "false"

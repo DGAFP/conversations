@@ -21,8 +21,10 @@ def local_login_enabled():
 
 
 def public_local_login_enabled():
-    """The normal login becomes OIDC while the technical form remains explicit."""
-    return local_login_enabled() and not settings.ASSISTANT_RH_OIDC_ENABLED
+    """Expose passwords as the normal login only when explicitly configured."""
+    return local_login_enabled() and (
+        not settings.ASSISTANT_RH_OIDC_ENABLED or settings.ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT
+    )
 
 
 class LocalAuthenticationForm(AuthenticationForm):
@@ -37,7 +39,7 @@ class LocalAuthenticationForm(AuthenticationForm):
         super().confirm_login_allowed(user)
         if not user.assistant_rh_admitted:
             raise forms.ValidationError("Accès en attente de validation DGAFP.", code="admission")
-        if settings.ASSISTANT_RH_OIDC_ENABLED:
+        if settings.ASSISTANT_RH_OIDC_ENABLED and not public_local_login_enabled():
             allowed = {
                 email.strip().casefold()
                 for email in settings.ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS
@@ -77,8 +79,15 @@ def login(request):
     return technical_login(request)
 
 
+def proconnect_login(request):
+    """Keep OIDC testing explicit when existing users sign in with their passwords."""
+    if not (settings.ASSISTANT_RH_ENABLED and settings.ASSISTANT_RH_OIDC_ENABLED):
+        raise Http404
+    return OIDCAuthenticateClass.as_view()(request)
+
+
 def technical_login(request):
-    """Keep the monitored password flow separate, CSRF protected and allowlisted."""
+    """Protect password login with CSRF, throttling and the configured access policy."""
     if not local_login_enabled():
         raise Http404
     if request.method == "POST":
@@ -92,14 +101,19 @@ def technical_login(request):
     return LoginView.as_view(
         authentication_form=LocalAuthenticationForm,
         template_name="assistant_rh/login.html",
+        extra_context={
+            "proconnect_login_enabled": settings.ASSISTANT_RH_ENABLED
+            and settings.ASSISTANT_RH_OIDC_ENABLED,
+        },
     )(request)
 
 
 def logout(request):
     """End the actual authentication flow, independently of the current login mode."""
+    backend = request.session.get(BACKEND_SESSION_KEY)
     local_session = (
-        settings.ASSISTANT_RH_ENABLED
-        and request.session.get(BACKEND_SESSION_KEY) == "django.contrib.auth.backends.ModelBackend"
+        settings.ASSISTANT_RH_ENABLED and backend == "django.contrib.auth.backends.ModelBackend"
     )
-    view = LocalLogoutView if local_session or public_local_login_enabled() else OIDCLogoutView
+    anonymous_local = not backend and public_local_login_enabled()
+    view = LocalLogoutView if local_session or anonymous_local else OIDCLogoutView
     return view.as_view()(request)

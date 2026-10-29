@@ -8,6 +8,7 @@ class AssistantRHSettings:
 
     ASSISTANT_RH_ENABLED = values.BooleanValue(False, environ_prefix=None)
     ASSISTANT_RH_LOCAL_LOGIN_ENABLED = values.BooleanValue(False, environ_prefix=None)
+    ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT = values.BooleanValue(False, environ_prefix=None)
     ASSISTANT_RH_OIDC_ENABLED = values.BooleanValue(False, environ_prefix=None)
     ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS = values.ListValue([], environ_prefix=None)
     ASSISTANT_RH_API_URL = values.Value("", environ_prefix=None)

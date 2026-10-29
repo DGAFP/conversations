@@ -46,12 +46,35 @@ existante sans procédure de migration des identités.
 
 ## Sonde et retour arrière
 
-`/api/v1.0/authenticate/` déclenche ProConnect. Le formulaire technique est à
-`/api/v1.0/local/authenticate/` ; il exige CSRF, applique la limitation de débit,
-l'admission et une liste fermée d'adresses de connexion. En staging, seul le
-compte `observability-staging@assistant-rh.invalid` est autorisé. Les comptes
-administrateurs n'ont pas d'exception sur ce formulaire. La connexion à
-l'administration Django conserve son propre formulaire existant.
+Avec `ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT=true`, le point d'entrée habituel
+`/api/v1.0/authenticate/` présente le formulaire email/mot de passe. Les comptes
+locaux actifs et déjà admis conservent leurs identifiants, leur UUID, leurs
+groupes et leur historique. Le formulaire conserve CSRF et la limitation de
+débit ; il ne réactive ni n'admet aucun compte.
+
+Un bouton distinct « Tester ProConnect » utilise
+`/api/v1.0/proconnect/authenticate/`. Cette route exige le mode RH et
+`ASSISTANT_RH_OIDC_ENABLED=true`, conserve les contrôles OIDC et permet une
+recette avec des identités synthétiques. La déconnexion suit le protocole de
+la session réellement ouverte, même lorsque la connexion locale est le défaut.
+Aucun compte local n'est rapproché d'une identité synthétique par email.
+
+Si `ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT=false` et OIDC est activé, l'entrée
+habituelle redevient ProConnect et le formulaire local explicite
+`/api/v1.0/local/authenticate/` exige en plus la liste fermée
+`ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS`. La sonde reste autorisée dans cette
+liste. Les comptes administrateurs n'ont pas d'exception sur ce formulaire.
+L'administration Django conserve son formulaire existant.
+
+Pour désactiver temporairement ProConnect sur le chart actuellement qualifié,
+`restore-local-login.py --kubeconfig <staging> --apply` applique uniquement
+l'override `ASSISTANT_RH_OIDC_ENABLED=false` au HelmRelease staging existant.
+Le script vérifie le serveur Kubernetes exact et utilise Flux ; il ne change
+aucun compte, mot de passe, droit ou secret. Sans `--apply`, il vérifie seulement
+le périmètre. Après livraison du backend comprenant le bouton de test, supprimer
+cet override temporaire pour retrouver OIDC activé avec le formulaire local
+par défaut. Ne pas réactiver le défaut ProConnect avant le raccordement aux
+vraies identités.
 
 La sonde externe doit utiliser `PROBE_LOGIN_PATH=/api/v1.0/local/authenticate/`
 après livraison du backend. La déconnexion choisit le protocole de la session

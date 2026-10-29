@@ -415,10 +415,14 @@ def test_explicit_local_login_is_disabled_without_the_rh_flag(rh, client):
     assert client.get(BASE + "local/authenticate/").status_code == 404
 
 
-def test_oidc_session_logout_visits_provider_while_technical_login_remains_enabled(rh, client):
+@pytest.mark.parametrize("local_default", [False, True])
+def test_oidc_session_logout_visits_provider_while_technical_login_remains_enabled(
+    rh, client, local_default
+):
     """Logout follows the actual OIDC session even when the probe can still log in locally."""
     rh.settings.ASSISTANT_RH_OIDC_ENABLED = True
     rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ENABLED = True
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT = local_default
     rh.settings.OIDC_OP_LOGOUT_ENDPOINT = "https://oidc.test/session/end"
     client.force_login(rh.user, backend="core.authentication.backends.OIDCAuthenticationBackend")
     session = client.session
@@ -428,6 +432,53 @@ def test_oidc_session_logout_visits_provider_while_technical_login_remains_enabl
     assert response.status_code == 302
     assert response["Location"].startswith("https://oidc.test/session/end?")
     assert "post_logout_redirect_uri=" in response["Location"]
+
+
+def test_password_login_is_default_with_explicit_proconnect_test(rh, local_account):
+    """Existing accounts retain their login and identity while OIDC stays opt-in."""
+    rh.settings.ASSISTANT_RH_OIDC_ENABLED = True
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT = True
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS = ["probe@example.invalid"]
+    client = Client(enforce_csrf_checks=True)
+    response = client.get(BASE + "authenticate/")
+    assert response.status_code == 200
+    assert b"Tester ProConnect" in response.content
+    assert (BASE + "proconnect/authenticate/").encode() in response.content
+    assert client.get(BASE + "config/").json()["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] is True
+    assert client.get(BASE + "proconnect/authenticate/")["Location"].startswith("http://oidc.test/")
+    assert client.post(BASE + "authenticate/", local_account).status_code == 403
+    response = client.post(
+        BASE + "authenticate/",
+        local_account,
+        HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
+    )
+    assert response.status_code == 302
+    assert client.session["_auth_user_id"] == str(rh.user.pk)
+    assert sign_assertion(rh.user.pk, client.session.session_key, "matte")
+    assert client.get(BASE + "logout/").status_code == 200
+    response = client.post(BASE + "logout/", HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value)
+    assert response.status_code == 302
+    assert "_auth_user_id" not in client.session
+
+
+@pytest.mark.parametrize("flag", ["ASSISTANT_RH_ENABLED", "ASSISTANT_RH_OIDC_ENABLED"])
+def test_explicit_proconnect_test_requires_rh_and_oidc(rh, client, flag):
+    """The test button cannot enable an OIDC provider outside its configured mode."""
+    rh.settings.ASSISTANT_RH_OIDC_ENABLED = True
+    setattr(rh.settings, flag, False)
+    assert client.get(BASE + "proconnect/authenticate/").status_code == 404
+
+
+@pytest.mark.parametrize("admitted", [False, True])
+def test_password_default_keeps_admission_and_activity_checks(rh, local_account, client, admitted):
+    """Selecting the password flow never reactivates or admits an existing account."""
+    rh.settings.ASSISTANT_RH_OIDC_ENABLED = True
+    rh.settings.ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT = True
+    rh.user.assistant_rh_admitted = admitted
+    rh.user.is_active = not admitted
+    rh.user.save()
+    assert client.post(BASE + "authenticate/", local_account).status_code == 200
+    assert "_auth_user_id" not in client.session
 
 
 @pytest.mark.usefixtures("rh")
