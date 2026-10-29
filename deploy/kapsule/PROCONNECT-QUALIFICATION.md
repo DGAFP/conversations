@@ -1,12 +1,13 @@
 # Recette ProConnect staging — 29 octobre 2026
 
-## Livraison
+## Livraison initiale
 
 - Code applicatif : `350b3cab361afd69eeab98dfcc2a7970e95c5192`
   (inclut le raccordement `b6fc46e` et les mises à jour de sécurité).
   Ce snapshot livré est conservé par le tag
-  `proconnect-staging-20261029-qualified` ; la PR ajoute ensuite les ajustements
-  de documentation et de lint, sans modification du comportement livré.
+  `proconnect-staging-20261029-qualified`. Les résultats de cette section
+  concernent cette première livraison ; le correctif de connexion locale
+  décrit plus bas remplace son comportement de connexion par défaut.
 - Backend : `sha256:700350eaee2aafaa39c0cb5d06104628312d41fb9123774ec41dcf676c89b964`.
 - Frontend conservé : commit `aa937734a0b92f108717e7183e78279f77b41efb`,
   digest `sha256:2fcfdbc097d2cf24b81d5d674efce7ed621db84e0e1c8fca054807874ebb9831`.
@@ -74,6 +75,39 @@ La production n'a pas été modifiée. Les preuves locales ne constituent pas un
 résultat de CI : les branches de raccordement sont publiées séparément et ne
 sont pas fusionnées.
 
+## Connexion locale par défaut et ProConnect à la demande
+
+Le correctif `a22ce2c9ec1052f612d183b56b21beedc427f7ff` conserve les comptes
+locaux actifs et admis sur le formulaire habituel. Un bouton distinct
+« Tester ProConnect » permet la recette avec le fournisseur d'intégration.
+Le protocole de déconnexion suit la session réellement ouverte.
+
+- Backend :
+  `sha256:288801e119af65fefa2fdd11ab645c74aba58d4558d76a67f65c51daacb3150a`.
+- Chart `conversations:0.35.3` :
+  `sha256:299913ae1de5e6e3415fe185a93840e9c72d63dbcf1c67ee0235482e7362befd`.
+- Flux : révision Helm 16 ; `Ready`, `Released`, `TestSuccess` vrais.
+- Frontend et sonde conservés. La source OCI staging reste épinglée au nouveau
+  digest avec les mêmes consignes de remise en sélection semver après fusion.
+- Désactivation temporaire d'OIDC pendant le rétablissement de l'accès, puis
+  suppression de cet override après livraison du nouveau backend :
+  `ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT=true` et OIDC activé dans le chart.
+- 143 tests locaux RH, authentification et configuration publique réussis ;
+  Ruff, Pylint et Helm lint réussis. Image backend : zéro HIGH/CRITICAL avec
+  la base Trivy du 29 octobre.
+- Vérifications live : formulaire habituel HTTP 200 et bouton visible depuis
+  l'accueil après rechargement ; POST sans CSRF refusé en 403 ; route explicite
+  ProConnect en 302 vers l'intégration, avec state, nonce, PKCE S256 et callback
+  staging. Aucun jeton ni identifiant n'est extrait dans les preuves.
+- Compte local existant vérifié en lecture seule : actif, admis, mot de passe
+  utilisable, sans sujet OIDC, habilitations conservées et historique présent.
+  Aucun rattachement, changement de mot de passe ou attribution de droit.
+
+Le retour arrière fonctionnel reste la désactivation d'OIDC par le script
+`restore-local-login.py`, limité au serveur Kubernetes staging. Le précédent
+chart `0.35.2` ne doit être réutilisé qu'avec cet override pour garder l'accès
+habituel par mot de passe. Aucune modification de production ni fusion.
+
 ## CI de la PR
 
 La PR Conversations est `DGAFP/conversations#10`, la sonde est dans
@@ -88,3 +122,9 @@ et undici 8.10.2 (quatre HIGH). Correctifs indiqués : DOMPurify 3.4.17 et
 undici 8.12.2. Le backend et la sonde restent à zéro HIGH/CRITICAL ; cette preuve
 ne couvre pas le frontend conservé. La PR reste en brouillon et ne doit pas être
 fusionnée avant traitement de ce contrôle séparé.
+
+Au commit du correctif de connexion locale, les tests backend, le lint backend,
+le format des commits et le job de validation Kapsule réussissent en CI. Le scan
+global `security-trivy` échoue toujours sur les six vulnérabilités du lock
+frontend inchangé. Le succès de la recette staging reste distinct de ce
+contrôle de fusion.
