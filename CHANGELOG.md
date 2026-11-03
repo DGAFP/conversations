@@ -8,6 +8,16 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- ✨(frontend) update Assistant RH homepage copy and project links.
+- 🔒️(dependencies) update PDF and frontend security fixes for staging.
+- 🐛(auth) keep local staging login as default and make ProConnect tests
+  explicit, preserving the authentication method on logout.
+
+- ✨(auth) connect staging to ProConnect with manual admission and corpus
+  grants.
+- 🔒️(auth) validate OIDC claims and restrict local login to the staging probe.
+- 🔒️(dependencies) update backend packages and Alpine runtime security fixes.
+
 - 🐛(chat) show public website types and article names in RH sources.
 - 🔒️(dependencies) update certifi and pillow for staging security fixes.
 

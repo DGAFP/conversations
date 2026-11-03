@@ -79,8 +79,8 @@ FROM base AS core
 
 ENV PYTHONUNBUFFERED=1
 
-# Install required system libs
-RUN apk add \
+# Install required system libs and their current security updates
+RUN apk upgrade --no-cache && apk add --no-cache \
   cairo \
   file \
   font-noto \

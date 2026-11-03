@@ -5,7 +5,7 @@
     "translation": {
       "\"{{name}}\" is still uploading - retry replacement once it completes.": "\"{{name}}\" est toujours en cours de téléchargement. Réessayez le remplacement une fois qu'il sera terminé.",
       "30 sec to tell us what you think or report a bug": "Prenez 30 secondes pour partager votre avis ou signaler un bug",
-      "A privacy-first assistant built for French public teams. Natively synced with LaSuite apps to help you draft, search, and decide without leaving your workflow.": "Un assistant conversationnel conçu pour garantir la sécurité des données des équipes d’agents publics. Intégré nativement à LaSuite numérique, il offre une utilisation simple et fluide de l'écosystème applicatif, de l'ébauche à la décision.",
+      "A conversational assistant designed to provide HR managers with instant, sourced answers from an up-to-date corpus of HR regulations.": "Un assistant conversationnel conçu pour fournir des réponses sourcées et instantanées aux gestionnaires RH, à partir d’un corpus réglementaire RH à jour.",
       "Access Denied - Error 403": "Accès refusé - Erreur 403",
       "Access denied": "Accès non autorisé",
       "Access requires the appropriate role for your administration. If you think this is a mistake, contact your administrator.": "L'accès nécessite le rôle approprié pour votre administration. Si vous pensez qu'il s'agit d'une erreur, contactez votre administrateur.",
@@ -233,7 +233,7 @@
       "Your account isn't authorized to use {{productName}}.": "Votre compte n'est pas autorisé à utiliser {{productName}}.",
       "Your chats": "Vos conversations",
       "Your document could not be processed. Please try again.": "Votre document n'a pas pu être traité. Veuillez réessayer dans quelques instants.",
-      "Your sovereign AI assistant": "Votre assistant IA souverain",
+      "Your HR chatbot powered by generative AI": "Votre Chatbot RH à base d’IA générative",
       "about a minute": "environ une minute",
       "about an hour": "environ une heure",
       "source": "source",

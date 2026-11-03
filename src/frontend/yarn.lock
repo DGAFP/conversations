@@ -5637,10 +5637,10 @@ domhandler@^5.0.2, domhandler@^5.0.3:
   dependencies:
     domelementtype "^2.3.0"
 
-dompurify@^3.4.13:
-  version "3.4.15"
-  resolved "https://registry.yarnpkg.com/dompurify/-/dompurify-3.4.15.tgz#30351b34513894f428c13bddb28bff0a027ae804"
-  integrity sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==
+dompurify@3.4.17, dompurify@^3.4.13:
+  version "3.4.17"
+  resolved "https://registry.yarnpkg.com/dompurify/-/dompurify-3.4.17.tgz#074bbb24eaa419535ac19ffe7f663104b0e1543d"
+  integrity sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==
   optionalDependencies:
     "@types/trusted-types" "^2.0.7"
 
@@ -11070,10 +11070,10 @@ undici-types@~7.18.0:
   resolved "https://registry.yarnpkg.com/undici-types/-/undici-types-7.18.2.tgz#29357a89e7b7ca4aef3bf0fd3fd0cd73884229e9"
   integrity sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==
 
-undici@8.10.2, undici@^5.29.0, undici@^7.12.0, undici@^8.9.0:
-  version "8.10.2"
-  resolved "https://registry.yarnpkg.com/undici/-/undici-8.10.2.tgz#960bcb0b43c267f86910ea7ca408ada843a44bc7"
-  integrity sha512-/y4/bH9YNU5hi9NIrpOuvGXFcxrj3CMrV+/AYpowAYTpHn8gX/XPFjNy766FPoYY0miQhdW977JFWKGNhBdwyQ==
+undici@8.12.2, undici@^5.29.0, undici@^7.12.0, undici@^8.9.0:
+  version "8.12.2"
+  resolved "https://registry.yarnpkg.com/undici/-/undici-8.12.2.tgz#e869237430adcc5de6bca798c94edd7db9dac5ac"
+  integrity sha512-XtuDWVdqTLr3NAxm2ly9/hU6kUsJOgGh1RASzMBbsw6aWCOaQzHdW+QQDfdERjfJ2V5vL5pRPa4RetO9UfivDg==
 
 unicorn-magic@^0.4.0:
   version "0.4.0"

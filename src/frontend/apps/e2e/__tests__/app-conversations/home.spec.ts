@@ -27,7 +27,9 @@ test.describe('Home page', () => {
 
     // Check the titles
     const h2 = page.locator('h2');
-    await expect(h2.getByText('Your sovereign AI assistant')).toBeVisible();
+    await expect(
+      h2.getByText('Your HR chatbot powered by generative AI'),
+    ).toBeVisible();
 
     await expect(footer).toBeVisible();
   });
@@ -77,7 +79,9 @@ test.describe('Home page', () => {
 
     // Check the titles
     const h2 = page.locator('h2');
-    await expect(h2.getByText('Your sovereign AI assistant')).toBeVisible();
+    await expect(
+      h2.getByText('Your HR chatbot powered by generative AI'),
+    ).toBeVisible();
 
     await expect(footer).toBeVisible();
   });
