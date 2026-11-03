@@ -23,7 +23,7 @@ test.describe('Footer', () => {
     const footer = page.locator('footer').first();
 
     await expect(footer.getByRole('link', { name: 'Github' })).toBeVisible();
-    await expect(footer.getByRole('link', { name: 'DINUM' })).toBeVisible();
+    await expect(footer.getByRole('link', { name: 'Beta' })).toBeVisible();
 
     await expect(
       footer.getByRole('link', { name: 'Legal Notice' }),

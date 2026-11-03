@@ -69,11 +69,11 @@ export default function HomeBanner() {
               line-height: 1.2;
             `}
           >
-            {t('Your sovereign AI assistant')}
+            {t('Your HR chatbot powered by generative AI')}
           </Text>
           <Text $theme="neutral" $variation="tertiary">
             {t(
-              'A privacy-first assistant built for French public teams. Natively synced with LaSuite apps to help you draft, search, and decide without leaving your workflow.',
+              'A conversational assistant designed to provide HR managers with instant, sourced answers from an up-to-date corpus of HR regulations.',
             )}
           </Text>
 

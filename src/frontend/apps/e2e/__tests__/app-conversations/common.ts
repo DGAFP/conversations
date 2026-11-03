@@ -112,7 +112,9 @@ export const randomName = (name: string, browserName: string, length: number) =>
 
 export const expectLoginPage = async (page: Page) =>
   await expect(
-    page.getByRole('heading', { name: 'Your sovereign AI assistant' }),
+    page.getByRole('heading', {
+      name: 'Your HR chatbot powered by generative AI',
+    }),
   ).toBeVisible();
 
 export const headerUserMenuTrigger = (page: Page) =>

@@ -8,6 +8,7 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- ✨(frontend) update Assistant RH homepage copy and project links.
 - 🐛(chat) show public website types and article names in RH sources.
 - 🔒️(dependencies) update certifi and pillow for staging security fixes.
 
