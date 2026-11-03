@@ -6,6 +6,8 @@ from configurations import values
 class OIDCSettings:
     """OIDC authorization code flow and userinfo mapping."""
 
+    OIDC_TIMEOUT = values.IntegerValue(10, environ_name="OIDC_TIMEOUT", environ_prefix=None)
+
     # OIDC - Authorization Code Flow
     OIDC_CREATE_USER = values.BooleanValue(
         default=True,

@@ -8,6 +8,7 @@ backend:
   replicas: 2
   envFrom:
     - secretRef: {name: conversations-runtime}
+    - secretRef: {name: conversations-proconnect}
   envVars:
     DJANGO_CONFIGURATION: Production
     DJANGO_SETTINGS_MODULE: conversations.settings
@@ -17,6 +18,30 @@ backend:
     DB_USER: conversations_app
     ASSISTANT_RH_ENABLED: "true"
     ASSISTANT_RH_LOCAL_LOGIN_ENABLED: "true"
+    ASSISTANT_RH_LOCAL_LOGIN_IS_DEFAULT: "true"
+    ASSISTANT_RH_OIDC_ENABLED: "true"
+    ASSISTANT_RH_LOCAL_LOGIN_ALLOWED_EMAILS: observability-staging@assistant-rh.invalid
+    FRONTEND_SILENT_LOGIN_ENABLED: "false"
+    OIDC_OP_URL: https://fca.integ01.dev-agentconnect.fr/api/v2
+    OIDC_OP_JWKS_ENDPOINT: https://fca.integ01.dev-agentconnect.fr/api/v2/jwks
+    OIDC_OP_AUTHORIZATION_ENDPOINT: https://fca.integ01.dev-agentconnect.fr/api/v2/authorize
+    OIDC_OP_TOKEN_ENDPOINT: https://fca.integ01.dev-agentconnect.fr/api/v2/token
+    OIDC_OP_USER_ENDPOINT: https://fca.integ01.dev-agentconnect.fr/api/v2/userinfo
+    OIDC_OP_LOGOUT_ENDPOINT: https://fca.integ01.dev-agentconnect.fr/api/v2/session/end
+    OIDC_RP_SIGN_ALGO: RS256
+    OIDC_RP_SCOPES: openid email given_name usual_name
+    OIDC_USERINFO_FULLNAME_FIELDS: given_name,usual_name
+    OIDC_USERINFO_SHORTNAME_FIELD: given_name
+    OIDC_AUTH_REQUEST_EXTRA_PARAMS: '{"acr_values": "eidas1"}'
+    OIDC_USE_NONCE: "true"
+    OIDC_USE_PKCE: "true"
+    OIDC_PKCE_CODE_CHALLENGE_METHOD: S256
+    OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION: "false"
+    OIDC_REDIRECT_REQUIRE_HTTPS: "true"
+    OIDC_REDIRECT_ALLOWED_HOSTS: staging.assistant-rh.beta.gouv.fr
+    OIDC_STORE_ACCESS_TOKEN: "false"
+    OIDC_STORE_REFRESH_TOKEN: "false"
+    OIDC_STORE_ID_TOKEN: "true"
     ASSISTANT_RH_API_URL: http://assistant-rh-api.assistant-rh-api.svc.cluster.local:8000/v1
     ASSISTANT_RH_DELEGATION_ISSUER: urn:assistant-rh:conversations:staging
     ASSISTANT_RH_API_AUDIENCE: assistant-rh-api
@@ -27,6 +52,7 @@ backend:
     DJANGO_CSRF_TRUSTED_ORIGINS: https://staging.assistant-rh.beta.gouv.fr
     ENVIRONMENT: staging
     LOGIN_REDIRECT_URL: "/"
+    LOGIN_REDIRECT_URL_FAILURE: "/"
     LOGOUT_REDIRECT_URL: "/"
     FEATURE_FLAG_DOCUMENT_UPLOAD: DISABLED
     FEATURE_FLAG_PRESENTATION_GENERATION: DISABLED

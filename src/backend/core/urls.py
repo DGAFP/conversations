@@ -50,6 +50,16 @@ urlpatterns = [
                 ),
                 *router.urls,
                 path("authenticate/", local.login),
+                path(
+                    "proconnect/authenticate/",
+                    local.proconnect_login,
+                    name="assistant-rh-proconnect-login",
+                ),
+                path(
+                    "local/authenticate/",
+                    local.technical_login,
+                    name="assistant-rh-technical-login",
+                ),
                 path("logout/", local.logout),
                 *oidc_urls,
                 path(
