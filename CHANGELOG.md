@@ -8,6 +8,7 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- Add scheduled pull requests for individual upstream releases.
 - Add individual admission, current group corpus grants and signed API delegation.
 - Keep conversation ministry fixed and hide history when access is withdrawn.
 - Add opt-in local password login before OIDC setup, preserving admission and corpus grants.
