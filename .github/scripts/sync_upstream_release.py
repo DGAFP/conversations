@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -13,6 +14,8 @@ from dataclasses import dataclass
 UPSTREAM_REPOSITORY = "suitenumerique/conversations"
 BASE_BRANCH = "main"
 BRANCH_PREFIX = "upstream-release/"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -103,7 +106,7 @@ def main() -> int:
 
     existing_branch = find_open_sync_pull_request(repository)
     if existing_branch:
-        print(f"A release sync pull request is already open: {existing_branch}")
+        logger.info(f"A release sync pull request is already open: {existing_branch}")
         return 0
 
     upstream_url = f"https://github.com/{UPSTREAM_REPOSITORY}.git"
@@ -115,7 +118,7 @@ def main() -> int:
         list_published_releases(), is_release_integrated
     )
     if release is None:
-        print("No missing upstream releases.")
+        logger.info("No missing upstream releases.")
         return 0
 
     branch = f"{BRANCH_PREFIX}{release.tag_name}"
@@ -154,13 +157,14 @@ def main() -> int:
         "--body",
         body,
     ).stdout.strip()
-    print(f"Opened {pull_request_url} for {release.tag_name}")
+    logger.info(f"Opened {pull_request_url} for {release.tag_name}")
     return 0
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         sys.exit(main())
     except RuntimeError as error:
-        print(f"error: {error}", file=sys.stderr)
+        logger.error("error: %s", error)
         sys.exit(1)
