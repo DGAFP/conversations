@@ -27,7 +27,7 @@ requires-python = "~=3.14.6"
 dependencies = [
     "beautifulsoup4==4.15.0",
     "boto3==1.43.24",
-    "Brotli==1.2.0",
+    "Brotli==1.2.1",
     "celery[redis]==5.6.3",
     "django-configurations==2.5.1",
     "django-cors-headers==4.9.0",
@@ -38,7 +38,7 @@ dependencies = [
     "django-storages[s3]==1.14.6",
     "django-timezone-field>=5.1",
     "django==5.2.17",
-    "djangorestframework==3.17.2",
+    "djangorestframework==3.18.2",
     "drf_spectacular==0.29.0",
     "dockerflow==2026.3.4",
     "factory_boy==3.3.3",
@@ -53,9 +53,9 @@ dependencies = [
     "nested-multipart-parser==1.6.0",
     "posthog==7.18.0",
     "pydantic==2.13.4",
-    "pydantic-ai-slim[openai,mistral,mcp]==2.22.0",
+    "pydantic-ai-slim[openai,mistral,mcp]==2.53.0",
     "psycopg[binary]==3.3.4",
-    "PyJWT==2.13.0",
+    "PyJWT==2.15.1",
     "python-magic==0.4.27",
     "python-pptx==1.0.2",
     "redis<6.0.0",
@@ -64,7 +64,7 @@ dependencies = [
     "trafilatura==2.1.0",
     "uvicorn==0.49.0",
     "servestatic==4.3.2",
-    "pypdf==6.16.1",
+    "pypdf==6.21.4",
     "odfdo==3.22.8",
     "django-solo==2.5.1",
     "tiktoken==0.13.0",
@@ -89,12 +89,13 @@ dev = [
     "pylint-django==2.7.0",
     "pylint==4.0.5",
     "pylint-pydantic==0.4.1",
-    "pydantic-evals==2.22.0",
+    "pydantic-evals==2.53.0",
     "logfire==4.41.0",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "pytest-django==4.12.0",
     "pytest-dotenv==0.5.2",
+    "pytest-httpx2==1.0.0",
     "pytest==9.0.3",
     "pytest-icdiff==0.9",
     "pytest-xdist==3.8.0",
@@ -113,18 +114,23 @@ universal = true
 
 [tool.uv]
 exclude-newer = "7 days"
+exclude-newer-package = { pypdf = "2026-10-29T00:00:00Z" }
 required-environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
     "sys_platform == 'darwin'",
 ]
 override-dependencies = [
+    "authlib>=1.9.1", # CVE-2026-96760, CVE-2026-114615, CVE-2026-114616, CVE-2026-116672
+    "certifi>=2026.10.18", # GHSA-6q48-6c7w-9gw2
     "cryptography>=50.0.0", # GHSA-g6cj-pr64-35w5
+    "dnspython>=2.9.0", # CVE-2026-114605
     "joserfc>=1.6.8", # CVE-2026-49852
-    "pillow>=12.2.0", #CVE-2026-40192
+    "pillow>=13.0.0", # CVE-2026-112393 and related Pillow fixes
     "python-multipart>=0.0.31", # CVE-2026-53539
     "starlette>=1.3.1", # CVE-2026-48818, CVE-2026-54283,
-    "pyjwt>=2.13.0", #CVE-2026-48526
+    "pyjwt>=2.15.1", # CVE-2026-102268 and related PyJWT fixes
     "pydantic-settings>=2.14.2", # GHSA-4xgf-cpjx-pc3j
+    "urllib3>=2.8.0", # CVE-2026-97687, CVE-2026-97689
 ]
 
 [tool.uv.build-backend]
@@ -175,6 +181,7 @@ extra-standard-library = ["tomllib"]
 
 [tool.pytest.ini_options]
 addopts = [
+    "-p pytest_httpx2",
     "-v",
     "--cov-report",
     "term-missing",
