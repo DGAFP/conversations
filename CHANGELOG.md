@@ -9,6 +9,7 @@ and this project adheres to
 ## Unreleased — Assistant RH
 
 - Add scheduled pull requests for individual upstream releases.
+- Upgrade vulnerable dependencies and repair the repository CI checks.
 - Add individual admission, current group corpus grants and signed API
   delegation.
 - Keep conversation ministry fixed and hide history when access is withdrawn.
