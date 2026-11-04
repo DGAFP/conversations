@@ -3,8 +3,11 @@
 import freezegun
 import posthog
 import pytest
+import respx.mocks
 from httpcore._backends.anyio import AnyIOBackend
 from httpcore._backends.sync import SyncBackend
+from pytest_httpx2._plugin import HTTPCore2Mocker
+from respx.mocks import HTTPCoreMocker
 from rest_framework.test import APIClient
 from urllib3.connectionpool import HTTPConnectionPool
 
@@ -14,6 +17,16 @@ from urllib3.connectionpool import HTTPConnectionPool
 # already patched, schema generation for its datetime field breaks
 # permanently for the rest of the worker process. Skip scanning langfuse.
 freezegun.configure(extend_ignore_list=["langfuse"])
+
+
+class DualHTTPCoreMocker(HTTPCore2Mocker):
+    """Patch both HTTPX generations used by the application and its AI providers."""
+
+    name = "dual-httpcore"
+    targets = [*HTTPCoreMocker.targets, *HTTPCore2Mocker.targets]
+
+
+respx.mocks.DEFAULT_MOCKER = DualHTTPCoreMocker.name
 
 
 @pytest.fixture

@@ -95,6 +95,7 @@ dev = [
     "pytest-cov==7.1.0",
     "pytest-django==4.12.0",
     "pytest-dotenv==0.5.2",
+    "pytest-httpx2==1.0.0",
     "pytest==9.0.3",
     "pytest-icdiff==0.9",
     "pytest-xdist==3.8.0",
@@ -180,6 +181,7 @@ extra-standard-library = ["tomllib"]
 
 [tool.pytest.ini_options]
 addopts = [
+    "-p pytest_httpx2",
     "-v",
     "--cov-report",
     "term-missing",
