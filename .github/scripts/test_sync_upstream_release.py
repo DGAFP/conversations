@@ -118,6 +118,7 @@ class MainTests(unittest.TestCase):
     ):
         selected = release("v0.0.25", "2026-10-01T16:17:03Z")
         find_next.return_value = selected
+        git.return_value = completed(2)
         gh.return_value = completed(stdout="https://example.test/pull/1\n")
 
         self.assertEqual(sync.main(), 0)
@@ -130,6 +131,31 @@ class MainTests(unittest.TestCase):
         self.assertEqual(arguments[:2], ("pr", "create"))
         self.assertIn("chore: merge upstream release v0.0.25", arguments)
         self.assertIn("upstream-release/v0.0.25", arguments)
+
+    @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
+    @patch("sync_upstream_release.gh")
+    @patch("sync_upstream_release.git")
+    @patch("sync_upstream_release.find_next_missing_release")
+    @patch("sync_upstream_release.list_published_releases")
+    @patch("sync_upstream_release.find_open_sync_pull_request", return_value=None)
+    def test_pushed_branch_is_reused_when_pr_creation_needs_retry(
+        self, find_open, list_releases, find_next, git, gh
+    ):
+        find_next.return_value = release("v0.0.25", "2026-10-01T16:17:03Z")
+        git.return_value = completed(0)
+        gh.return_value = completed(stdout="https://example.test/pull/1\n")
+
+        self.assertEqual(sync.main(), 0)
+
+        git.assert_any_call(
+            "fetch",
+            "origin",
+            "refs/heads/upstream-release/v0.0.25:"
+            "refs/remotes/origin/upstream-release/v0.0.25",
+        )
+        self.assertFalse(
+            any(call.args and call.args[0] == "push" for call in git.call_args_list)
+        )
 
 
 if __name__ == "__main__":

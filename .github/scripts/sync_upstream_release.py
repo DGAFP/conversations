@@ -90,6 +90,16 @@ def is_release_integrated(tag_name: str) -> bool:
     return result.returncode == 0
 
 
+def remote_branch_exists(branch_name: str) -> bool:
+    result = git(
+        "ls-remote", "--exit-code", "--heads", "origin", branch_name, check=False
+    )
+    if result.returncode not in (0, 2):
+        details = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(f"Could not inspect remote branch {branch_name}: {details}")
+    return result.returncode == 0
+
+
 def find_next_missing_release(
     releases: Iterable[Release], integrated: Callable[[str], bool]
 ) -> Release | None:
@@ -122,18 +132,27 @@ def main() -> int:
         return 0
 
     branch = f"{BRANCH_PREFIX}{release.tag_name}"
-    git("switch", "-c", branch, f"origin/{BASE_BRANCH}")
-    git(
-        "-c",
-        "user.name=github-actions[bot]",
-        "-c",
-        "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-        "merge",
-        "--no-ff",
-        "--no-edit",
-        f"{release.tag_name}^{{commit}}",
-    )
-    git("push", "--set-upstream", "origin", branch)
+    if remote_branch_exists(branch):
+        logger.info("Reusing existing release branch: %s", branch)
+        git(
+            "fetch",
+            "origin",
+            f"refs/heads/{branch}:refs/remotes/origin/{branch}",
+        )
+        git("switch", "-c", branch, f"origin/{branch}")
+    else:
+        git("switch", "-c", branch, f"origin/{BASE_BRANCH}")
+        git(
+            "-c",
+            "user.name=github-actions[bot]",
+            "-c",
+            "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+            "merge",
+            "--no-ff",
+            "--no-edit",
+            f"{release.tag_name}^{{commit}}",
+        )
+        git("push", "--set-upstream", "origin", branch)
 
     release_url = (
         f"https://github.com/{UPSTREAM_REPOSITORY}/releases/tag/{release.tag_name}"
