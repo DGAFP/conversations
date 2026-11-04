@@ -2,6 +2,8 @@ import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
 export const CONFIG = {
+  ASSISTANT_RH_ENABLED: false,
+  ASSISTANT_RH_LOCAL_LOGIN_ENABLED: false,
   DOCS_BASE_URL: null,
   ENVIRONMENT: 'development',
   FEATURE_FLAGS: {

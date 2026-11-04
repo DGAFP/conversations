@@ -98,7 +98,10 @@ jobs:
         run: |
           pip install --user --only-binary :all: codespell==2.4.3
       - name: Check for typos
-        run: codespell
+        run: |
+          codespell \
+            --skip="./docs/assistant-rh/identity.md,./src/backend/core/templates/assistant_rh/login.html" \
+            --ignore-words-list="connexion,adresse,invalide"
 
   lint-back:
     runs-on: ubuntu-latest

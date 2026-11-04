@@ -127,6 +127,7 @@ def _make_pydantic_text_response(  # pylint: disable=too-many-arguments,too-many
         "timestamp": timestamp,
         "usage": usage if usage is not None else ZERO_USAGE,
         "run_id": run_id,
+        "workspace_ref": None,
     }
 
 
@@ -554,6 +555,7 @@ def test_post_conversation_tool_call(api_client, mock_openai_stream_tool, settin
             },
             "provider_name": "openai",
             "provider_response_id": "chatcmpl-tool-call",
+            "workspace_ref": None,
             "provider_url": "https://www.external-ai-service.com/",
             "state": "complete",
             "timestamp": FROZEN_TIMESTAMP,
@@ -714,6 +716,7 @@ def test_post_conversation_tool_call_fails(api_client, mock_openai_stream_tool):
             },
             "provider_name": "openai",
             "provider_response_id": "chatcmpl-tool-call",
+            "workspace_ref": None,
             "provider_url": "https://www.external-ai-service.com/",
             "state": "complete",
             "timestamp": FROZEN_TIMESTAMP,
