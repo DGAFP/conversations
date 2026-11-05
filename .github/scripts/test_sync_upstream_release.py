@@ -18,6 +18,13 @@ def release(tag_name, published_at):
     return sync.Release(tag_name=tag_name, published_at=published_at)
 
 
+def ls_remote_missing(*arguments, check=True):
+    """Git stub where every call succeeds except the remote branch lookup."""
+    if arguments[:2] == ("ls-remote", "--exit-code"):
+        return completed(2)
+    return completed(0)
+
+
 class ReleaseSelectionTests(unittest.TestCase):
     def test_next_release_is_oldest_missing_by_publication_date(self):
         releases = [
@@ -118,7 +125,7 @@ class MainTests(unittest.TestCase):
     ):
         selected = release("v0.0.25", "2026-10-01T16:17:03Z")
         find_next.return_value = selected
-        git.return_value = completed(2)
+        git.side_effect = ls_remote_missing
         gh.return_value = completed(stdout="https://example.test/pull/1\n")
 
         self.assertEqual(sync.main(), 0)
@@ -130,7 +137,71 @@ class MainTests(unittest.TestCase):
         arguments = gh.call_args.args
         self.assertEqual(arguments[:2], ("pr", "create"))
         self.assertIn("chore: merge upstream release v0.0.25", arguments)
+        self.assertNotIn("chore: merge upstream release v0.0.25 (conflicts)", arguments)
         self.assertIn("upstream-release/v0.0.25", arguments)
+
+    @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
+    @patch("sync_upstream_release.gh")
+    @patch("sync_upstream_release.git")
+    @patch("sync_upstream_release.find_next_missing_release")
+    @patch("sync_upstream_release.list_published_releases")
+    @patch("sync_upstream_release.find_open_sync_pull_request", return_value=None)
+    def test_conflicted_release_still_opens_a_pr_for_manual_resolution(
+        self, find_open, list_releases, find_next, git, gh
+    ):
+        find_next.return_value = release("v0.0.25", "2026-10-01T16:17:03Z")
+        git.side_effect = [
+            completed(0),  # remote add
+            completed(0),  # fetch upstream
+            completed(0),  # fetch origin
+            completed(2),  # ls-remote: release branch does not exist
+            completed(0),  # switch
+            completed(1, stdout="Automatic merge failed; fix conflicts.\n"),  # merge
+            completed(0, stdout="app.py\npackage.json\n"),  # diff conflicted files
+            completed(0),  # merge --abort
+            completed(0),  # reset --hard
+            completed(0),  # push
+        ]
+        gh.return_value = completed(stdout="https://example.test/pull/1\n")
+
+        self.assertEqual(sync.main(), 0)
+
+        git.assert_any_call("merge", "--abort")
+        git.assert_any_call("reset", "--hard", "v0.0.25^{commit}")
+        arguments = gh.call_args.args
+        self.assertIn("chore: merge upstream release v0.0.25 (conflicts)", arguments)
+        body = arguments[arguments.index("--body") + 1]
+        self.assertIn("- `app.py`", body)
+        self.assertIn("- `package.json`", body)
+        self.assertIn("git merge origin/main", body)
+
+    @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
+    @patch("sync_upstream_release.gh")
+    @patch("sync_upstream_release.git")
+    @patch("sync_upstream_release.find_next_missing_release")
+    @patch("sync_upstream_release.list_published_releases")
+    @patch("sync_upstream_release.find_open_sync_pull_request", return_value=None)
+    def test_merge_failure_without_conflicts_fails_the_run(
+        self, find_open, list_releases, find_next, git, gh
+    ):
+        find_next.return_value = release("v0.0.25", "2026-10-01T16:17:03Z")
+        git.side_effect = [
+            completed(0),  # remote add
+            completed(0),  # fetch upstream
+            completed(0),  # fetch origin
+            completed(2),  # ls-remote: release branch does not exist
+            completed(0),  # switch
+            completed(128, stderr="fatal: refusing to merge\n"),  # merge
+            completed(0, stdout=""),  # diff: no conflicted files
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "failed without conflicts"):
+            sync.main()
+
+        self.assertFalse(
+            any(call.args and call.args[0] == "push" for call in git.call_args_list)
+        )
+        gh.assert_not_called()
 
     @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
     @patch("sync_upstream_release.gh")
