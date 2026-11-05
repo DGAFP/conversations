@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
+from django.contrib.auth.models import Group
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 
@@ -14,6 +15,26 @@ from . import models
 @admin.register(models.User)
 class UserAdmin(auth_admin.UserAdmin):
     """Admin class for the User model"""
+
+    def get_fieldsets(self, request, obj=None):
+        if settings.ASSISTANT_RH_ENABLED and obj is None:
+            return ((None, {"fields": ("admin_email", "password1", "password2")}),)
+        return super().get_fieldsets(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if settings.ASSISTANT_RH_ENABLED:
+            return request.user.is_active and request.user.is_superuser
+        return super().has_change_permission(request, obj)
+
+    def has_add_permission(self, request):
+        if settings.ASSISTANT_RH_ENABLED:
+            return request.user.is_active and request.user.is_superuser
+        return super().has_add_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        if settings.ASSISTANT_RH_ENABLED:
+            return request.user.is_active and request.user.is_superuser
+        return super().has_delete_permission(request, obj)
 
     fieldsets = (
         (
@@ -50,6 +71,7 @@ class UserAdmin(auth_admin.UserAdmin):
             _("Permissions"),
             {
                 "fields": (
+                    "assistant_rh_admitted",
                     "is_active",
                     "is_device",
                     "is_staff",
@@ -226,3 +248,49 @@ class AccessBypassEmailAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
     readonly_fields = ("id", "created_at", "updated_at")
     fields = ("email", "is_active", "note", "expires_at", "id", "created_at", "updated_at")
+
+
+admin.site.unregister(Group)
+
+
+@admin.register(Group)
+class GroupAdmin(auth_admin.GroupAdmin):
+    """Groups carrying corpus grants are managed by central administrators."""
+
+    def has_add_permission(self, request):
+        if settings.ASSISTANT_RH_ENABLED:
+            return request.user.is_active and request.user.is_superuser
+        return super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        if settings.ASSISTANT_RH_ENABLED:
+            return request.user.is_active and request.user.is_superuser
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if settings.ASSISTANT_RH_ENABLED:
+            return request.user.is_active and request.user.is_superuser
+        return super().has_delete_permission(request, obj)
+
+
+@admin.register(models.MinistryGrant)
+class MinistryGrantAdmin(admin.ModelAdmin):
+    """Only central DGAFP administrators may grant a corpus to a group."""
+
+    list_display = ("group", "ministry")
+    list_filter = ("ministry",)
+
+    def has_module_permission(self, request):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)

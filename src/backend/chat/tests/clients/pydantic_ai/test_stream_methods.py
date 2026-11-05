@@ -1,6 +1,6 @@
 """Unit tests for AIAgentService stream methods."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -76,6 +76,33 @@ async def test_stream_data_async_formats_as_sdk_events(ui_messages):
             '{"type":"finish","messageMetadata":{"usage":{"promptTokens":120,'
             '"completionTokens":456,"co2Impact":0.0}}}',
         ]
+
+
+@pytest.mark.asyncio
+async def test_stream_data_async_forwards_datagouv_and_closes_assistant_rh_client(
+    ui_messages, settings
+):
+    """The upstream force argument survives the fork's client cleanup path."""
+    conversation = await sync_to_async(ChatConversationFactory)()
+    service = AIAgentService(conversation, user=conversation.owner)
+    settings.ASSISTANT_RH_ENABLED = True
+
+    async def mock_run_agent(*args, **kwargs):
+        yield events_v4.TextPart(text="Hello")
+
+    with (
+        patch.object(service, "_run_agent", side_effect=mock_run_agent) as run_agent,
+        patch.object(
+            service.conversation_agent.model.client, "close", new=AsyncMock()
+        ) as close_client,
+    ):
+        async for _ in service.stream_data_async(
+            ui_messages, force_web_search=True, force_datagouv=True
+        ):
+            pass
+
+    run_agent.assert_called_once_with(ui_messages, True, True)
+    close_client.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio

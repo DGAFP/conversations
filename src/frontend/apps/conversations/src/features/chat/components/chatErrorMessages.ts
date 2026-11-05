@@ -26,6 +26,9 @@ export const getChatErrorMessage = (
     model_busy: t(
       'The AI inference provider is too busy. Please try again later.',
     ),
+    permission_denied: t(
+      'Your access rights have changed. Please reload the page.',
+    ),
     summarization_failed: t('Summarization failed. Please try again later.'),
   };
   return messages[errorType];

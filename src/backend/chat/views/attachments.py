@@ -12,12 +12,13 @@ from django.utils.translation import gettext_lazy as _
 
 import magic
 from lasuite.malware_detection import malware_detection
-from rest_framework import decorators, mixins, permissions, status, viewsets
-from rest_framework.exceptions import ValidationError
+from rest_framework import decorators, mixins, status, viewsets
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from core.analytics import capture_event
 from core.api.viewsets import SerializerPerActionMixin
+from core.assistant_rh import AssistantRHSessionPermission
 from core.file_upload import enums
 from core.file_upload.enums import AttachmentStatus
 from core.file_upload.mixins import AttachmentMixin
@@ -49,7 +50,7 @@ class BaseAttachmentViewSet(
     """
 
     pagination_class = None
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AssistantRHSessionPermission]
     serializer_class = serializers.ChatConversationAttachmentSerializer
     create_serializer_class = serializers.CreateChatConversationAttachmentSerializer
     queryset = models.ChatConversationAttachment.objects
@@ -60,6 +61,11 @@ class BaseAttachmentViewSet(
     holder_pk_kwarg: str
     holder_model: type
     malware_callbacks: dict  # {"safe": "...", "unknown": "...", "unsafe": "..."}
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if settings.ASSISTANT_RH_ENABLED:
+            raise PermissionDenied("Pièces jointes indisponibles dans Assistant RH.")
 
     @property
     def _holder_pk(self):

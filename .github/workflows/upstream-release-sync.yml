@@ -1,0 +1,41 @@
+name: Sync upstream releases
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays at 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-release-sync
+  cancel-in-progress: false
+
+jobs:
+  open-next-release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.UPSTREAM_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.UPSTREAM_SYNC_APP_PRIVATE_KEY }}
+          owner: DGAFP
+          repositories: conversations
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+          persist-credentials: false
+
+      - name: Open the next upstream release PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          gh auth setup-git
+          python3 .github/scripts/sync_upstream_release.py

@@ -4,6 +4,8 @@ import { expect } from '@playwright/test';
 import packageJson from '../../package.json';
 
 export const CONFIG = {
+  ASSISTANT_RH_ENABLED: false,
+  ASSISTANT_RH_LOCAL_LOGIN_ENABLED: false,
   DOCS_BASE_URL: null,
   ENVIRONMENT: 'development',
   FEATURE_FLAGS: {

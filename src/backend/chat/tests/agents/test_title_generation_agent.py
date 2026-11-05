@@ -5,6 +5,7 @@
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from chat.agents.conversation import TitleGenerationAgent
+from chat.tests.utils import unwrap_instruction
 
 
 def test_title_generation_agent_uses_default_model_hrid(settings):
@@ -50,4 +51,4 @@ def test_title_generation_agent_instructions():
         "that accurately summarize conversation content and help the user quickly identify the "
         "conversation.\n\n"
     )
-    assert instructions[0].instruction == expected
+    assert unwrap_instruction(instructions[0]) == expected

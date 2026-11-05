@@ -15,6 +15,7 @@ vi.mock('@/stores', () => ({
 }));
 
 const mockUseConfig = vi.fn();
+const mockInputChatActions = vi.fn();
 
 vi.mock('@/core', () => ({
   useConfig: () => mockUseConfig(),
@@ -39,7 +40,14 @@ vi.mock('@/features/chat/hooks/useFileUrls', () => ({
 
 // Mock child components
 vi.mock('../InputChatAction', () => ({
-  InputChatActions: () => <div data-testid="input-chat-actions">Actions</div>,
+  InputChatActions: (props: {
+    fileUploadEnabled: boolean;
+    webSearchEnabled: boolean;
+    datagouvEnabled: boolean;
+  }) => {
+    mockInputChatActions(props);
+    return <div data-testid="input-chat-actions">Actions</div>;
+  },
 }));
 
 vi.mock('../SuggestionCarousel', () => ({
@@ -153,6 +161,28 @@ describe('InputChat', () => {
     render(<InputChat {...defaultProps} />, { wrapper: AppWrapper });
 
     expect(screen.getByTestId('input-chat-actions')).toBeInTheDocument();
+    expect(mockInputChatActions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fileUploadEnabled: true,
+        webSearchEnabled: true,
+        datagouvEnabled: true,
+      }),
+    );
+  });
+
+  it('should disable external sources and uploads for Assistant RH', () => {
+    mockUseConfig.mockReturnValue({
+      data: { ASSISTANT_RH_ENABLED: true },
+    });
+    render(<InputChat {...defaultProps} />, { wrapper: AppWrapper });
+
+    expect(mockInputChatActions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fileUploadEnabled: false,
+        webSearchEnabled: false,
+        datagouvEnabled: false,
+      }),
+    );
   });
 
   it('should call handleInputChange when typing', async () => {

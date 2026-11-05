@@ -23,6 +23,11 @@ ZERO_USAGE = {
 }
 
 
+def unwrap_instruction(instruction):
+    """Return the callable or string payload of a Pydantic AI sourced instruction."""
+    return getattr(instruction, "instruction", instruction)
+
+
 def assert_data_stream_response(response):
     """Assert a response is a valid Vercel AI SDK UI message stream response."""
     assert response.status_code == status.HTTP_200_OK

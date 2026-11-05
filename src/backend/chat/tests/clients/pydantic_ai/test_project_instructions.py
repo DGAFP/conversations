@@ -4,6 +4,7 @@ import pytest
 
 from chat.clients.pydantic_ai import AIAgentService
 from chat.factories import ChatConversationFactory, ChatProjectFactory
+from chat.tests.utils import unwrap_instruction
 
 pytestmark = pytest.mark.django_db
 
@@ -11,11 +12,8 @@ pytestmark = pytest.mark.django_db
 def _get_instruction_names(service):
     """Return the names of dynamic (callable) instructions registered on the conversation agent."""
     # pylint: disable=protected-access
-    return [
-        sourced.instruction.__name__
-        for sourced in service.conversation_agent._instructions
-        if callable(sourced.instruction)
-    ]
+    instructions = map(unwrap_instruction, service.conversation_agent._instructions)
+    return [fn.__name__ for fn in instructions if callable(fn)]
 
 
 def test_project_instructions_injected_when_present():
@@ -27,10 +25,11 @@ def test_project_instructions_injected_when_present():
 
     assert "project_instructions" in _get_instruction_names(service)
     # Verify the instruction returns the correct content
+    instructions = service.conversation_agent._instructions  # pylint: disable=protected-access
     instruction_fn = next(
-        sourced.instruction
-        for sourced in service.conversation_agent._instructions  # pylint: disable=protected-access
-        if callable(sourced.instruction) and sourced.instruction.__name__ == "project_instructions"
+        fn
+        for fn in map(unwrap_instruction, instructions)
+        if callable(fn) and fn.__name__ == "project_instructions"
     )
     assert instruction_fn() == "Always answer in bullet points."
 
