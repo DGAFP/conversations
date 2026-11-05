@@ -523,7 +523,6 @@ def test_post_conversation_with_document_upload(
             "output_tokens": 8,
         },
         "run_id": _run_id,
-        "workspace_ref": None,
     }
     instruction_2 = chat_conversation.pydantic_messages[2]["instructions"]
     _assert_document_instructions(instruction_2, today_prompt_date, "sample.pdf")
@@ -589,7 +588,6 @@ def test_post_conversation_with_document_upload(
             "output_tokens": 12,
         },
         "run_id": _run_id,
-        "workspace_ref": None,
     }
 
 
@@ -856,7 +854,6 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
             "output_tokens": 1,
         },
         "run_id": _run_id,
-        "workspace_ref": None,
     }
     instruction_2 = chat_conversation.pydantic_messages[2]["instructions"]
     _assert_document_instructions(instruction_2, today_prompt_date, "sample.pdf")
@@ -916,7 +913,6 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
             "output_tokens": 6,
         },
         "run_id": _run_id,
-        "workspace_ref": None,
     }
 
 
@@ -1116,7 +1112,6 @@ def test_post_conversation_with_odt_document_upload(
             "output_tokens": 8,
         },
         "run_id": _run_id,
-        "workspace_ref": None,
     }
     instruction_2 = chat_conversation.pydantic_messages[2]["instructions"]
     _assert_document_instructions(instruction_2, today_prompt_date, "sample.odt")
@@ -1182,5 +1177,4 @@ def test_post_conversation_with_odt_document_upload(
             "output_tokens": 12,
         },
         "run_id": _run_id,
-        "workspace_ref": None,
     }

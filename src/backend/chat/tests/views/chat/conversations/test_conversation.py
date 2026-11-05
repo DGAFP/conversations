@@ -570,7 +570,6 @@ def test_post_conversation_tool_call(api_client, mock_openai_stream_tool, settin
             "timestamp": FROZEN_TIMESTAMP,
             "usage": ZERO_USAGE,
             "run_id": _run_id,
-            "workspace_ref": None,
         },
         {
             "conversation_id": ANY,
@@ -731,7 +730,6 @@ def test_post_conversation_tool_call_fails(api_client, mock_openai_stream_tool):
             "timestamp": FROZEN_TIMESTAMP,
             "usage": ZERO_USAGE,
             "run_id": _run_id,
-            "workspace_ref": None,
         },
         {
             "conversation_id": ANY,

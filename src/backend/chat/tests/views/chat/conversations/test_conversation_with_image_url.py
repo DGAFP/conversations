@@ -238,7 +238,6 @@ def test_post_conversation_with_local_image_url(
                 "output_tokens": 9,
             },
             "run_id": _run_id,
-            "workspace_ref": None,
         },
     ]
 
@@ -798,6 +797,5 @@ def test_post_conversation_with_local_image_url_in_history(
                 "output_tokens": 11,
             },
             "run_id": _run_id,
-            "workspace_ref": None,
         },
     ]

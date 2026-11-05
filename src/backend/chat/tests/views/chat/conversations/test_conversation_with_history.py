@@ -1367,7 +1367,6 @@ def test_post_conversation_with_existing_tool_history(
             "output_tokens": 0,
         },
         "run_id": _run_id,
-        "workspace_ref": None,
     }
 
     assert history_conversation_with_tool.pydantic_messages[10] == {
@@ -1435,7 +1434,6 @@ def test_post_conversation_with_existing_tool_history(
             "output_tokens": 0,
         },
         "run_id": _run_id,
-        "workspace_ref": None,
     }
 
 

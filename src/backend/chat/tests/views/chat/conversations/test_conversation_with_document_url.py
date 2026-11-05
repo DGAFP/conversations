@@ -329,7 +329,6 @@ def test_post_conversation_with_local_pdf_document_url(
                 "output_tokens": 9,
             },
             "run_id": _run_id,
-            "workspace_ref": None,
         },
     ]
 
@@ -825,7 +824,6 @@ def test_post_conversation_with_local_document_url_in_history(  # pylint: disabl
                 "output_tokens": 11,
             },
             "run_id": _run_id,
-            "workspace_ref": None,
         },
     ]
 
@@ -1031,6 +1029,5 @@ def test_post_conversation_with_local_not_pdf_document_url(
                 "output_tokens": 7,
             },
             "run_id": _run_id,
-            "workspace_ref": None,
         },
     ]
