@@ -21,16 +21,22 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.0.25] - 2026-10-01
+
 ### Added
 
 - ✨(back) add the data.gouv connector for a beta cohort
 - ✨(back) add Staan web search tool
+- ✨(front) let users activate or force the DataGouv connector
 
 ### Changed
 
 - ✨(front) replace input actions with a + dropdown menu
 - 🔧(project) replace MinIO with RustFS for local development and CI
 - ⬆️(dependencies) update front and mail dependencies and remove unused ones
+- ⬆️(dependencies) upgrade pyjwt to 2.14.0
+- ⬆️(dependencies) upgrade urllib3 to 2.8.0
+- ⚡️(front) read the cached config once per page load i/o on every render
 
 ### Fixed
 
@@ -38,6 +44,7 @@ and this project adheres to
 - 👷(ci) pull the MinIO images from quay.io instead of Docker Hub
 - 🐛(ci) fix the CHANGELOG check failing when a pull request is opened
 - 🐛(back) replace whitenoise with servestatic for async-capable serving
+- 🐛(attachments) accept markdown uploads with a missing or generic mime type
 
 ## [0.0.24] - 2026-09-08
 
@@ -504,7 +511,9 @@ and this project adheres to
 - 💄(chat) add code highlighting for LLM responses #67
 - 🔧(evals) add run_evals management command
 
-[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.24...main
+[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.25...main
+
+[0.0.25]: https://github.com/suitenumerique/conversations/compare/v0.0.24...v0.0.25
 
 [0.0.24]: https://github.com/suitenumerique/conversations/compare/v0.0.23...v0.0.24
 

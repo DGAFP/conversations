@@ -13,6 +13,10 @@ import WarningFilledIcon from '@/assets/icons/uikit-custom/warning-filled.svg?re
 import { Box, Loader, Text } from '@/components';
 import { useToast } from '@/components/ToastProvider';
 import { useConfig, useFeatureEnabled } from '@/core';
+import {
+  isFileAccepted as isFileTypeAccepted,
+  withMarkdownExtensions,
+} from '@/features/attachments/utils/fileTypes';
 import { useAssistantHealth } from '@/features/chat/api/useAssistantHealth';
 import { LLMModel } from '@/features/chat/api/useLLMConfiguration';
 import { ChatErrorType } from '@/features/chat/components/ChatError';
@@ -50,6 +54,8 @@ interface InputChatProps {
   containerRef?: React.RefObject<HTMLDivElement | null>;
   forceWebSearch?: boolean;
   onToggleWebSearch?: () => void;
+  forceDatagouv?: boolean;
+  onToggleDatagouv?: () => void;
   onStop?: () => void;
   selectedModel?: LLMModel | null;
   onModelSelect?: (model: LLMModel) => void;
@@ -148,6 +154,8 @@ export const InputChat = ({
   containerRef,
   forceWebSearch = false,
   onToggleWebSearch,
+  forceDatagouv = false,
+  onToggleDatagouv,
   onStop,
   selectedModel,
   onModelSelect,
@@ -172,28 +180,14 @@ export const InputChat = ({
     documentUploadFeature && !conf?.ASSISTANT_RH_ENABLED;
   const webSearchFeature = useFeatureEnabled('web-search');
   const webSearchEnabled = webSearchFeature && !conf?.ASSISTANT_RH_ENABLED;
+  const datagouvFeature = useFeatureEnabled('datagouv-connector');
+  const datagouvEnabled = datagouvFeature && !conf?.ASSISTANT_RH_ENABLED;
 
   const { data: assistantHealth } = useAssistantHealth();
 
   const isFileAccepted = useCallback(
     (file: File): boolean => {
-      const acceptedConfig = conf?.chat_upload_accept;
-      if (!acceptedConfig) {
-        return true;
-      }
-      const acceptedTypes = acceptedConfig
-        .split(',')
-        .map((type) => type.trim());
-      return acceptedTypes.some((acceptedType) => {
-        if (acceptedType.startsWith('.')) {
-          return file.name.toLowerCase().endsWith(acceptedType.toLowerCase());
-        }
-        if (acceptedType.endsWith('/*')) {
-          const baseType = acceptedType.slice(0, -2);
-          return file.type.startsWith(baseType);
-        }
-        return file.type === acceptedType;
-      });
+      return isFileTypeAccepted(file, conf?.chat_upload_accept);
     },
     [conf?.chat_upload_accept],
   );
@@ -413,6 +407,11 @@ export const InputChat = ({
     textareaRef.current?.focus();
   }, [onToggleWebSearch]);
 
+  const handleDatagouvToggle = useCallback(() => {
+    onToggleDatagouv?.();
+    textareaRef.current?.focus();
+  }, [onToggleDatagouv]);
+
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const fileList = e.target.files;
@@ -580,7 +579,7 @@ export const InputChat = ({
                 )}
 
               <input
-                accept={conf?.chat_upload_accept}
+                accept={withMarkdownExtensions(conf?.chat_upload_accept)}
                 type="file"
                 multiple
                 ref={fileInputRef}
@@ -610,6 +609,11 @@ export const InputChat = ({
                 onAttachClick={handleAttachClick}
                 onWebSearchToggle={
                   onToggleWebSearch ? handleWebSearchToggle : undefined
+                }
+                datagouvEnabled={datagouvEnabled}
+                forceDatagouv={forceDatagouv}
+                onDatagouvToggle={
+                  onToggleDatagouv ? handleDatagouvToggle : undefined
                 }
                 onModelSelect={onModelSelect}
                 selectedModel={selectedModel || null}
