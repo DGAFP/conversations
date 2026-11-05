@@ -8,6 +8,9 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- ✨(frontend) show the ministry acronym beside the model picker logo,
+  including read-only conversations and single-corpus access.
+
 - ✨(frontend) update Assistant RH homepage copy and project links.
 - 🔒️(dependencies) update PDF and frontend security fixes for staging.
 - 🐛(auth) keep local staging login as default and make ProConnect tests
