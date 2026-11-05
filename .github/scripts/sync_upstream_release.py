@@ -100,6 +100,38 @@ def remote_branch_exists(branch_name: str) -> bool:
     return result.returncode == 0
 
 
+def merge_upstream_release(tag_name: str) -> list[str]:
+    """Merge the upstream release into the current branch.
+
+    On conflict, abandon the merge and leave the branch pointing at the
+    release commit, so the pull request exposes the conflicts for manual
+    resolution instead of failing the workflow. Returns the conflicted
+    paths, empty when the merge is clean.
+    """
+    result = git(
+        "-c",
+        "user.name=github-actions[bot]",
+        "-c",
+        "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+        "merge",
+        "--no-ff",
+        "--no-edit",
+        f"{tag_name}^{{commit}}",
+        check=False,
+    )
+    if result.returncode == 0:
+        return []
+    conflicted_paths = git("diff", "--name-only", "--diff-filter=U").stdout.splitlines()
+    if not conflicted_paths:
+        details = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(
+            f"Merge of upstream release {tag_name} failed without conflicts:\n{details}"
+        )
+    git("merge", "--abort")
+    git("reset", "--hard", f"{tag_name}^{{commit}}")
+    return conflicted_paths
+
+
 def find_next_missing_release(
     releases: Iterable[Release], integrated: Callable[[str], bool]
 ) -> Release | None:
@@ -131,6 +163,7 @@ def main() -> int:
         logger.info("No missing upstream releases.")
         return 0
 
+    conflicted_paths: list[str] = []
     branch = f"{BRANCH_PREFIX}{release.tag_name}"
     if remote_branch_exists(branch):
         logger.info("Reusing existing release branch: %s", branch)
@@ -142,26 +175,47 @@ def main() -> int:
         git("switch", "-c", branch, f"origin/{branch}")
     else:
         git("switch", "-c", branch, f"origin/{BASE_BRANCH}")
-        git(
-            "-c",
-            "user.name=github-actions[bot]",
-            "-c",
-            "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-            "merge",
-            "--no-ff",
-            "--no-edit",
-            f"{release.tag_name}^{{commit}}",
-        )
+        conflicted_paths = merge_upstream_release(release.tag_name)
+        if conflicted_paths:
+            logger.info(
+                "Release %s conflicts with %s in %d file(s); the pull request "
+                "will need manual conflict resolution.",
+                release.tag_name,
+                BASE_BRANCH,
+                len(conflicted_paths),
+            )
         git("push", "--set-upstream", "origin", branch)
 
     release_url = (
         f"https://github.com/{UPSTREAM_REPOSITORY}/releases/tag/{release.tag_name}"
     )
+    title = f"chore: merge upstream release {release.tag_name}"
     body = (
         f"Merges upstream release [{release.tag_name}]({release_url}).\n\n"
         "Merge with a merge commit, not squash or rebase, so subsequent runs "
         "can detect the integrated release."
     )
+    if conflicted_paths:
+        conflicted_file_list = "\n".join(f"- `{path}`" for path in conflicted_paths)
+        title = f"chore: merge upstream release {release.tag_name} (conflicts)"
+        body = (
+            f"Merges upstream release [{release.tag_name}]({release_url}).\n\n"
+            "This release conflicts with "
+            f"`{BASE_BRANCH}` and needs manual resolution. The branch points "
+            "at the upstream release, so GitHub marks this pull request as "
+            "conflicted and blocks the merge until someone resolves it.\n\n"
+            f"Conflicted files:\n{conflicted_file_list}\n\n"
+            "To resolve locally:\n\n"
+            "```\n"
+            "git fetch origin\n"
+            f"git switch {branch}\n"
+            f"git merge origin/{BASE_BRANCH}\n"
+            "# resolve the conflicts, then commit the merge\n"
+            "git push\n"
+            "```\n\n"
+            "Merge with a merge commit, not squash or rebase, so subsequent "
+            "runs can detect the integrated release."
+        )
     pull_request_url = gh(
         "pr",
         "create",
@@ -172,7 +226,7 @@ def main() -> int:
         "--head",
         branch,
         "--title",
-        f"chore: merge upstream release {release.tag_name}",
+        title,
         "--body",
         body,
     ).stdout.strip()
