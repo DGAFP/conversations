@@ -274,7 +274,7 @@ def fixture_mock_summarization_agent():
 
 @pytest.fixture(name="mock_openai_stream")
 @freeze_time("2025-07-25T10:36:35.297675Z")
-def fixture_mock_openai_stream():
+def fixture_mock_openai_stream(httpx2_mock):
     """
     Fixture to mock the OpenAI stream response for document search queries.
     """
@@ -323,7 +323,7 @@ def fixture_mock_openai_stream():
         for line in openai_stream.splitlines(keepends=True):
             yield line.encode()
 
-    route = respx.post("https://www.external-ai-service.com/chat/completions").mock(
+    route = httpx2_mock.post("https://www.external-ai-service.com/chat/completions").mock(
         return_value=httpx.Response(200, stream=mock_stream())
     )
 
@@ -665,7 +665,7 @@ def test_post_conversation_with_document_upload_feature_disabled(
 @respx.mock
 @respx.mock
 @freeze_time()
-def test_post_conversation_with_document_upload_summarize(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913
+def test_post_conversation_with_document_upload_summarize(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913, PLR0917
     api_client,
     mock_document_api,  # pylint: disable=unused-argument
     sample_pdf_content,

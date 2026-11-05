@@ -1,6 +1,6 @@
 {
   "name": "conversations",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "private": true,
   "workspaces": {
     "packages": [
@@ -26,27 +26,32 @@
     "test": "yarn app:test"
   },
   "resolutions": {
-    "@types/node": "24.13.6",
+    "@types/node": "24.19.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@typescript-eslint/eslint-plugin": "8.70.0",
-    "@typescript-eslint/parser": "8.70.0",
-    "typescript-eslint": "8.70.0",
+    "@typescript-eslint/eslint-plugin": "8.70.1",
+    "@typescript-eslint/parser": "8.70.1",
+    "eslint": "9.39.5",
+    "typescript-eslint": "8.70.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "5.8.3",
-    "minimatch": "^10.2.1",
+    "minimatch": "11.0.1",
+    "glob": "14.0.2",
+    "katex": "0.18.2",
     "flatted": "^3.4.0",
-    "dompurify": "3.4.17",
-    "figlet": "1.11.3",
-    "handlebars": "4.7.10",
     "undici": "8.12.2",
+    "seroval": "1.7.7",
+    "@fastify/busboy": "3.2.2",
+    "figlet": "1.11.4",
     "brace-expansion": "^5.0.12",
     "postcss": ">=8.5.28",
     "**/posthog-js/fflate": "^0.4.9",
     "**/@eslint/eslintrc/js-yaml": "^4.3.2",
     "**/cosmiconfig/js-yaml": "^4.3.2",
     "**/i18next-parser/js-yaml": "^4.3.2",
-    "**/@istanbuljs/load-nyc-config/js-yaml": "^3.15.2"
+    "**/@istanbuljs/load-nyc-config/js-yaml": "^3.15.2",
+    "handlebars": "^4.7.10",
+    "dompurify": "^3.4.17"
   }
 }

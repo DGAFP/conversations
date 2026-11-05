@@ -29,6 +29,7 @@ pytestmark = pytest.mark.django_db
     MEDIA_BASE_URL="http://testserver/",
     POSTHOG_KEY={"id": "132456", "host": "https://eu.i.posthog-test.com"},
     SENTRY_DSN="https://sentry.test/123",
+    RELEASE="1.2.3",
     THEME_CUSTOMIZATION_FILE_PATH="",
     RAG_FILES_ACCEPTED_FORMATS=[
         "application/pdf",
@@ -76,6 +77,7 @@ def test_api_config(is_authenticated):
         "MEDIA_BASE_URL": "http://testserver/",
         "POSTHOG_KEY": {"id": "132456", "host": "https://eu.i.posthog-test.com"},
         "SENTRY_DSN": "https://sentry.test/123",
+        "RELEASE": "1.2.3",
         "theme_customization": {},
         "chat_upload_accept": "application/pdf,text/plain",
         "project_files_max_count": 10,
@@ -215,6 +217,7 @@ def test_api_config_with_original_theme_customization(is_authenticated, settings
     MEDIA_BASE_URL="http://testserver/",
     POSTHOG_KEY={"id": "132456", "host": "https://eu.i.posthog-test.com"},
     SENTRY_DSN="https://sentry.test/123",
+    RELEASE="1.2.3",
     THEME_CUSTOMIZATION_FILE_PATH="",
     RAG_FILES_ACCEPTED_FORMATS=[
         "application/pdf",
@@ -263,6 +266,7 @@ async def test_api_config_async(is_authenticated):
         "MEDIA_BASE_URL": "http://testserver/",
         "POSTHOG_KEY": {"id": "132456", "host": "https://eu.i.posthog-test.com"},
         "SENTRY_DSN": "https://sentry.test/123",
+        "RELEASE": "1.2.3",
         "theme_customization": {},
         "chat_upload_accept": "application/pdf,text/plain",
         "project_files_max_count": 10,

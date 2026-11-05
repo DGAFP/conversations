@@ -19,12 +19,43 @@ and this project adheres to
 - Report revoked delegation as a rights error, throttle local login per account
   and sign out sessions without an audit nonce.
 
-## [Unreleased]
+## [0.0.26] - 2026-10-22
+
+- ✨(back) add opt-in prometheus metrics on `/metrics`
+- ✨(back) measure model requests, chat streams and outgoing calls
+- ✨(helm) add a ServiceMonitor and a PodMonitor for the backend metrics
+- 📝(project) add pull request and AI usage policy
+- ✨(back) make the Sentry backend traces sample rate configurable
+
+### Changed
+
+- 🔒️(front) upgrade dompurify to 3.4.17 to fix security issues
+- 🔒️(back) upgrade djangorestframework to 3.18.3 to fix security issues
+- 🔒️(back) upgrade brotli to fix CVE-2026-111497
+- 🔒️(back) upgrade certifi and pillow to fix CVEs
+- 🔧(docker) replace maildev with mailcatcher like other La Suite projects
+- ⬆️(dependencies) upgrade back-end and front-end dependencies
+- ⬆️(back) upgrade pydantic-ai to 2.52.0 and switch to httpx2
+- 💄(back) change high traffic wording and lower alert level
+
+### Fixed
+
+- 💄(front) add margin-top for the carbon impact module.
+- ⚡️(front) disable posthog-js periodic feature flag reloads
+- 🐛(front) avoid stale pages and blank screens after a deploy
+- 🐛(front) ask to reload when a new version has been deployed
+- 🐛(ci) remove the shell default suffix from the DOCKER_USER build argument
+
+### Security
+
+- 🔒️(project) keep user prompts out of logs and telemetry
+- 🔒️(docker) bind dev compose ports to localhost only
 
 ## [0.0.25] - 2026-10-01
 
 ### Added
 
+- ✨(back) run model-health poll and de-index as celery beat tasks
 - ✨(back) add the data.gouv connector for a beta cohort
 - ✨(back) add Staan web search tool
 - ✨(front) let users activate or force the DataGouv connector
@@ -38,8 +69,14 @@ and this project adheres to
 - ⬆️(dependencies) upgrade urllib3 to 2.8.0
 - ⚡️(front) read the cached config once per page load i/o on every render
 
+### Removed
+
+- 🔥(helm) remove the model-health and de-index CronJobs
+
 ### Fixed
 
+- 🐛(back) keep a turn that is interrupted by appending it as it is produced
+- 🚸(front) wait for an answer still generating after leaving the conversation
 - ✅(back) make the project list query counts independent of test order
 - 👷(ci) pull the MinIO images from quay.io instead of Docker Hub
 - 🐛(ci) fix the CHANGELOG check failing when a pull request is opened
@@ -511,7 +548,9 @@ and this project adheres to
 - 💄(chat) add code highlighting for LLM responses #67
 - 🔧(evals) add run_evals management command
 
-[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.25...main
+[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.26...main
+
+[0.0.26]: https://github.com/suitenumerique/conversations/compare/v0.0.25...v0.0.26
 
 [0.0.25]: https://github.com/suitenumerique/conversations/compare/v0.0.24...v0.0.25
 
