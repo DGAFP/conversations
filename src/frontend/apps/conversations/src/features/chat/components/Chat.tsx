@@ -47,6 +47,10 @@ import {
   KEY_LIST_PROJECT,
   ProjectsResponse,
 } from '@/features/chat/api/useProjects';
+import {
+  AssistantRHSources,
+  assistantRHSources,
+} from '@/features/chat/components/AssistantRHSources';
 import { ChatError, ChatErrorType } from '@/features/chat/components/ChatError';
 import { ImageProcessingUnavailableBanner } from '@/features/chat/components/ImageProcessingUnavailableBanner';
 import { InputChat } from '@/features/chat/components/InputChat';
@@ -494,10 +498,15 @@ export const Chat = ({
     );
   }, [isSourceOpen, messages]);
 
+  const selectedSourceMessage = messages.find(
+    (message) => message.id === isSourceOpen,
+  );
+  const selectedSourceCount = config?.ASSISTANT_RH_ENABLED
+    ? assistantRHSources(selectedSourceMessage).length
+    : selectedSourceParts.length;
   const isSourcesPanelOpen =
-    !config?.ASSISTANT_RH_ENABLED &&
-    Boolean(isSourceOpen) &&
-    selectedSourceParts.length > 0;
+    Boolean(selectedSourceMessage) &&
+    (Boolean(config?.ASSISTANT_RH_ENABLED) || selectedSourceParts.length > 0);
 
   const sourcesPanelContent = isSourcesPanelOpen ? (
     <Box
@@ -518,8 +527,8 @@ export const Chat = ({
         $margin={{ all: 'xs', left: 'sm' }}
       >
         <Text as="h2" $size="lg" $weight="700">
-          {selectedSourceParts.length}{' '}
-          {selectedSourceParts.length > 1 ? t('Sources') : t('Source')}
+          {selectedSourceCount > 0 ? `${selectedSourceCount} ` : ''}
+          {selectedSourceCount === 1 ? t('Source') : t('Sources')}
         </Text>
         <Button
           color="neutral"
@@ -540,7 +549,11 @@ export const Chat = ({
         />
       </Box>
       <HorizontalSeparator $withPadding={false} />
-      <SourceItemList parts={selectedSourceParts} getMetadata={getMetadata} />
+      {config?.ASSISTANT_RH_ENABLED ? (
+        <AssistantRHSources message={selectedSourceMessage} />
+      ) : (
+        <SourceItemList parts={selectedSourceParts} getMetadata={getMetadata} />
+      )}
     </Box>
   ) : null;
 

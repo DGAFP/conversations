@@ -415,7 +415,7 @@ describe('MessageItem', () => {
     mockConfig.ASSISTANT_RH_ENABLED = false;
   });
 
-  describe('inline RH sources', () => {
+  describe('RH source panel action', () => {
     const documentPath = '/api/v1.0/chats/chat-1/messages/msg-1/sources/0/';
     const articleUrl =
       'https://www.service-public.fr/particuliers/vosdroits/F1';
@@ -444,34 +444,36 @@ describe('MessageItem', () => {
       },
     };
 
-    it('replaces only the API footer with one list for documents and articles', async () => {
+    it('opens the panel for RH sources without duplicating them under the answer', async () => {
       mockConfig.ASSISTANT_RH_ENABLED = true;
+      const onOpenSources = vi.fn();
       await act(async () => {
         renderWithProviders(
-          <MessageItem {...defaultProps} message={rhMessage} />,
+          <MessageItem
+            {...defaultProps}
+            message={rhMessage}
+            onOpenSources={onOpenSources}
+          />,
         );
       });
-      expect(screen.getByTestId('markdown-content')).toHaveTextContent(answer);
+      expect(await screen.findByTestId('markdown-content')).toHaveTextContent(
+        answer,
+      );
       expect(screen.getByTestId('markdown-content')).not.toHaveTextContent(
         'Sources :',
       );
-      expect(screen.getAllByRole('heading', { name: 'Sources' })).toHaveLength(
-        1,
-      );
-      expect(screen.getAllByRole('link')).toHaveLength(2);
       expect(
-        screen.getByRole('link', { name: 'Guide RH — nouvel onglet' }),
-      ).toHaveAttribute('href', expect.stringContaining(documentPath));
-      expect(
-        screen.getByRole('link', { name: 'Article public — nouvel onglet' }),
-      ).toHaveAttribute('href', articleUrl);
-      expect(
-        screen.queryByRole('button', { name: /Show.*source/ }),
+        screen.queryByRole('heading', { name: 'Sources' }),
       ).not.toBeInTheDocument();
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Show 2 sources' }),
+      );
+      expect(onOpenSources).toHaveBeenCalledWith('msg-1');
       expect(rhMessage.parts[0].text).toBe(text);
     });
 
-    it('updates when authoritative metadata arrives without changing the text', async () => {
+    it('updates the source count when authoritative metadata arrives', async () => {
       mockConfig.ASSISTANT_RH_ENABLED = true;
       const { rerender } = renderWithProviders(
         <MessageItem
@@ -479,24 +481,25 @@ describe('MessageItem', () => {
           message={{ ...rhMessage, metadata: undefined }}
         />,
       );
-      await act(async () => {});
-      expect(screen.queryByRole('link')).not.toBeInTheDocument();
-      expect(screen.getByRole('status')).toHaveTextContent(
-        'Références documentaires indisponibles',
+      expect(
+        screen.getByRole('button', { name: 'Show sources' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('assistant-message-content')).toHaveTextContent(
+        'Sources :',
       );
-      await act(async () => {
-        rerender(
-          withProviders(<MessageItem {...defaultProps} message={rhMessage} />),
-        );
-      });
-      expect(screen.getAllByRole('link')).toHaveLength(2);
-      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      rerender(
+        withProviders(<MessageItem {...defaultProps} message={rhMessage} />),
+      );
+      expect(
+        screen.getByRole('button', { name: 'Show 2 sources' }),
+      ).toBeInTheDocument();
       expect(screen.getByTestId('markdown-content')).not.toHaveTextContent(
         'Sources :',
       );
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
     });
 
-    it('shows the single source list when streaming finishes', async () => {
+    it('shows the source action when streaming finishes', async () => {
       mockConfig.ASSISTANT_RH_ENABLED = true;
       const { rerender } = renderWithProviders(
         <MessageItem
@@ -506,27 +509,40 @@ describe('MessageItem', () => {
           status="streaming"
         />,
       );
-      await act(async () => {});
+      expect(
+        screen.queryByRole('button', { name: /Show.*sources/ }),
+      ).not.toBeInTheDocument();
+      rerender(
+        withProviders(
+          <MessageItem
+            {...defaultProps}
+            message={rhMessage}
+            isLastAssistantMessage
+            status="ready"
+          />,
+        ),
+      );
+      expect(
+        screen.getByRole('button', { name: 'Show 2 sources' }),
+      ).toBeInTheDocument();
       expect(screen.queryByRole('link')).not.toBeInTheDocument();
-      await act(async () => {
-        rerender(
-          withProviders(
-            <MessageItem
-              {...defaultProps}
-              message={rhMessage}
-              isLastAssistantMessage
-              status="ready"
-            />,
-          ),
-        );
-      });
-      expect(screen.getAllByRole('link')).toHaveLength(2);
-      expect(screen.getAllByRole('heading', { name: 'Sources' })).toHaveLength(
-        1,
+    });
+
+    it('offers to hide the panel for the selected answer', async () => {
+      mockConfig.ASSISTANT_RH_ENABLED = true;
+      const onOpenSources = vi.fn();
+      renderWithProviders(
+        <MessageItem
+          {...defaultProps}
+          message={rhMessage}
+          isSourceOpen="msg-1"
+          onOpenSources={onOpenSources}
+        />,
       );
-      expect(screen.getByTestId('markdown-content')).not.toHaveTextContent(
-        'Sources :',
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Hide sources' }),
       );
+      expect(onOpenSources).toHaveBeenCalledWith('msg-1');
     });
 
     it('keeps the source panel action outside RH mode', async () => {

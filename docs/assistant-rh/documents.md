@@ -28,9 +28,9 @@ Le navigateur fournit des identifiants applicatifs et un ordinal. Les éventuels
 
 `Range` et `If-Range` sont ignorés : chaque demande authentifiée renvoie un PDF complet `200`, conformément à D2 ; aucun 206/416 n’est annoncé. `?download=1` utilise la même autorisation et une disposition `attachment` pour les clients qui demandent explicitement un téléchargement.
 
-Une seule liste « Sources » apparaît directement sous la réponse RH : titre cliquable et organisme disponible, pour les documents comme pour les articles. Le panneau latéral et son bouton ne sont plus proposés en mode RH. Quand les métadonnées autoritatives sont disponibles, la présentation remplace uniquement le bloc réservé `\n\n---\n**Sources :**\n` ajouté par l’API ; les citations du corps de réponse et le texte stocké restent inchangés. Sans association fiable, les références historiques restent affichées sans inventer de lien et un état d’indisponibilité est explicite.
+Le bouton « Afficher les sources » de chaque réponse RH ouvre le panneau latéral : titre cliquable et organisme disponible, pour les documents comme pour les articles. La liste est présentée uniquement dans ce panneau, avec le nombre de sources de la réponse sélectionnée. Le même bouton ou le bouton de fermeture permet de refermer le panneau. Quand les métadonnées autoritatives sont disponibles, la présentation remplace uniquement le bloc réservé `\n\n---\n**Sources :**\n` ajouté par l’API ; les citations du corps de réponse et le texte stocké restent inchangés. Sans association fiable, les références historiques restent affichées sans inventer de lien et un état d’indisponibilité est explicite.
 
-Chaque source ouvre un nouvel onglet. Les PDF internes utilisent l’URL applicative protégée et le lecteur PDF du navigateur ; les articles conservent leur URL canonique publique. Cette présentation remplace le panneau et l’aperçu intégré initiaux selon le cadrage UX du 20 octobre 2026.
+Chaque source ouvre un nouvel onglet. Les PDF internes utilisent l’URL applicative protégée et le lecteur PDF du navigateur ; les articles conservent leur URL canonique publique. Le panneau latéral est rétabli ; les liens conservent leur ouverture dans un nouvel onglet.
 
 ## Déploiement et ressources
 

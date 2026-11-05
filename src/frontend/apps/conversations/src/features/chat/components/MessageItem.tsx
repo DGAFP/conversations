@@ -15,10 +15,7 @@ import SourcesIcon from '@/assets/icons/uikit-custom/sources.svg?react';
 import { Box, Loader, Text } from '@/components';
 import { useConfig } from '@/core/config';
 import { SkippableFileUIPart } from '@/features/chat/api/useChat';
-import {
-  AssistantRHSources,
-  assistantRHSources,
-} from '@/features/chat/components/AssistantRHSources';
+import { assistantRHSources } from '@/features/chat/components/AssistantRHSources';
 import { AttachmentList } from '@/features/chat/components/AttachmentList';
 import { FeedbackButtons } from '@/features/chat/components/FeedbackButtons';
 import {
@@ -298,6 +295,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
   const isRHResponse =
     message.role === 'assistant' && Boolean(config?.ASSISTANT_RH_ENABLED);
   const rhSources = isRHResponse ? assistantRHSources(message) : [];
+  const sourceCount = isRHResponse ? rhSources.length : sourceParts.length;
   const displayedText =
     rhSources.length > 0 ? withoutAssistantRHSources(textContent) : textContent;
 
@@ -478,19 +476,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                   {textContent}
                 </Text>
               ) : (
-                <>
-                  <BlocksList blocks={completedBlocks} pending={pending} />
-                  {isRHResponse && !isCurrentlyStreaming && (
-                    <Box $margin={{ top: 'sm' }}>
-                      {rhSources.length > 0 && (
-                        <Text as="h3" $size="md" $weight="600">
-                          Sources
-                        </Text>
-                      )}
-                      <AssistantRHSources message={message} />
-                    </Box>
-                  )}
-                </>
+                <BlocksList blocks={completedBlocks} pending={pending} />
               )}
             </Box>
           )}
@@ -625,7 +611,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                         messageId={message.id}
                       />
                     )}
-                  {sourceParts.length > 0 && !config?.ASSISTANT_RH_ENABLED && (
+                  {(sourceCount > 0 || isRHResponse) && (
                     <Button
                       size="nano"
                       variant="tertiary"
@@ -640,10 +626,10 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                     >
                       <Text $theme="neutral" $variation="tertiary">
                         {isSourceOpen !== message.id ? t('Show') : t('Hide')}{' '}
-                        {isSourceOpen !== message.id
-                          ? `${sourceParts.length} `
+                        {isSourceOpen !== message.id && sourceCount > 0
+                          ? `${sourceCount} `
                           : ''}
-                        {sourceParts.length !== 1 ? t('sources') : t('source')}
+                        {sourceCount !== 1 ? t('sources') : t('source')}
                       </Text>
                     </Button>
                   )}

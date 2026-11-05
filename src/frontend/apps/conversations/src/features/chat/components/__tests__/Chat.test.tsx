@@ -56,13 +56,15 @@ vi.mock('rehype-katex', () => ({ default: () => {} }));
 vi.mock('remark-gfm', () => ({ default: () => {} }));
 vi.mock('remark-math', () => ({ default: () => {} }));
 
+const mockConfig: { ASSISTANT_RH_ENABLED?: boolean } = {};
+
 vi.mock('@/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/core')>()),
-  useConfig: () => ({ data: {} }),
+  useConfig: () => ({ data: mockConfig }),
 }));
 vi.mock('@/core/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/core/config')>()),
-  useConfig: () => ({ data: {} }),
+  useConfig: () => ({ data: mockConfig }),
 }));
 vi.mock('@/features/chat/api/useAssistantHealth', () => ({
   useAssistantHealth: () => ({ data: undefined }),
@@ -87,7 +89,7 @@ vi.mock('@/features/attachments/hooks/useUploadFile', () => ({
   }),
 }));
 vi.mock('@/features/sources-panel', () => ({
-  useSourcePanelAnchor: () => null,
+  useSourcePanelAnchor: () => document.getElementById('test-sources-panel'),
   SourcePanel: () => null,
 }));
 
@@ -320,5 +322,136 @@ describe('Chat message ownership', () => {
         'Assistant IA replied: An answer.',
       ]),
     );
+  });
+});
+
+describe('RH sources panel', () => {
+  const sourceMessage = {
+    id: 'rh-answer',
+    role: 'assistant' as const,
+    parts: [{ type: 'text' as const, text: 'Réponse RH.' }],
+    metadata: {
+      assistant_rh: {
+        sources: [
+          {
+            title: 'Guide RH',
+            publisher: 'DGAFP',
+            access: 'authenticated',
+            url: '/api/v1.0/chats/conv-1/messages/rh-answer/sources/0/',
+          },
+          {
+            title: 'Article public',
+            publisher: 'Service-Public',
+            access: 'public',
+            url: 'https://www.service-public.fr/particuliers/vosdroits/F1',
+          },
+        ],
+      },
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConfig.ASSISTANT_RH_ENABLED = true;
+    usePendingChatStore.setState({ input: '', files: null });
+    const anchor = document.createElement('div');
+    anchor.id = 'test-sources-panel';
+    document.body.appendChild(anchor);
+    vi.mocked(getConversation).mockResolvedValue({
+      messages: [sourceMessage],
+    } as Awaited<ReturnType<typeof getConversation>>);
+  });
+
+  afterEach(() => {
+    mockConfig.ASSISTANT_RH_ENABLED = false;
+    document.getElementById('test-sources-panel')?.remove();
+  });
+
+  it('opens restored sources in the panel and closes it with its close button', async () => {
+    renderChat();
+    const toggle = await screen.findByRole('button', {
+      name: 'Show 2 sources',
+    });
+    expect(
+      screen.queryByRole('link', { name: 'Guide RH — nouvel onglet' }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(toggle);
+    expect(
+      screen.getByRole('heading', { name: '2 Sources' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Guide RH — nouvel onglet' }),
+    ).toHaveAttribute(
+      'href',
+      expect.stringContaining('/messages/rh-answer/sources/0/'),
+    );
+    expect(
+      screen.getByRole('link', { name: 'Article public — nouvel onglet' }),
+    ).toHaveAttribute('target', '_blank');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Close sources panel' }),
+    );
+    expect(
+      screen.queryByRole('link', { name: 'Guide RH — nouvel onglet' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Show 2 sources' }),
+    ).toBeInTheDocument();
+  });
+
+  it('switches the panel to the selected answer and toggles it closed', async () => {
+    vi.mocked(getConversation).mockResolvedValue({
+      messages: [
+        sourceMessage,
+        {
+          ...sourceMessage,
+          id: 'other-answer',
+          metadata: {
+            assistant_rh: {
+              sources: [
+                {
+                  ...sourceMessage.metadata.assistant_rh.sources[1],
+                  title: 'Autre article',
+                },
+              ],
+            },
+          },
+        },
+      ],
+    } as Awaited<ReturnType<typeof getConversation>>);
+    renderChat();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Show 2 sources' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Show 1 source' }),
+    );
+    expect(
+      screen.getByRole('heading', { name: '1 Source' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Autre article — nouvel onglet' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Guide RH — nouvel onglet' }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Hide source' }));
+    expect(
+      screen.queryByRole('heading', { name: '1 Source' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the unavailable state for legacy answers inside the panel', async () => {
+    vi.mocked(getConversation).mockResolvedValue({
+      messages: [{ ...sourceMessage, metadata: undefined }],
+    } as Awaited<ReturnType<typeof getConversation>>);
+    renderChat();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Show sources' }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Références documentaires indisponibles',
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });
