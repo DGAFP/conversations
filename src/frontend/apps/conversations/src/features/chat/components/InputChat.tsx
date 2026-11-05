@@ -175,9 +175,13 @@ export const InputChat = ({
   const { isDesktop, isMobile } = useResponsiveStore();
 
   const { data: conf } = useConfig();
-  const fileUploadEnabled = useFeatureEnabled('document-upload');
-  const webSearchEnabled = useFeatureEnabled('web-search');
-  const datagouvEnabled = useFeatureEnabled('datagouv-connector');
+  const documentUploadFeature = useFeatureEnabled('document-upload');
+  const fileUploadEnabled =
+    documentUploadFeature && !conf?.ASSISTANT_RH_ENABLED;
+  const webSearchFeature = useFeatureEnabled('web-search');
+  const webSearchEnabled = webSearchFeature && !conf?.ASSISTANT_RH_ENABLED;
+  const datagouvFeature = useFeatureEnabled('datagouv-connector');
+  const datagouvEnabled = datagouvFeature && !conf?.ASSISTANT_RH_ENABLED;
 
   const { data: assistantHealth } = useAssistantHealth();
 

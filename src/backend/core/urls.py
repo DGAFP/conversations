@@ -7,6 +7,7 @@ from lasuite.oidc_login.urls import urlpatterns as oidc_urls
 from rest_framework.routers import DefaultRouter
 
 from core.api import viewsets
+from core.authentication import local
 from core.file_upload.enums import FileToLLMMode
 
 from chat.views import (
@@ -41,6 +42,8 @@ urlpatterns = [
         include(
             [
                 *router.urls,
+                path("authenticate/", local.login),
+                path("logout/", local.logout),
                 *oidc_urls,
                 path(
                     "llm-configuration/", LLMConfigurationView.as_view(), name="llm-configuration"

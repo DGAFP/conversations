@@ -1,6 +1,7 @@
 import { UseQueryOptions, useQuery } from '@tanstack/react-query';
 
 import { APIError, fetchAPI } from '@/api';
+import { useConfig } from '@/core';
 
 export interface LLMModel {
   hrid: string;
@@ -36,10 +37,18 @@ export function useLLMConfiguration(
     LLMConfigurationResponse
   >,
 ) {
+  const { data: config } = useConfig();
+
   return useQuery<LLMConfigurationResponse, APIError, LLMConfigurationResponse>(
     {
       queryKey: [KEY_LLM_CONFIGURATION],
       queryFn: getLLMConfiguration,
+      // Assistant RH grants can change at any time: never serve a stale catalogue.
+      ...(config?.ASSISTANT_RH_ENABLED && {
+        staleTime: 0,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: 'always',
+      }),
       ...queryConfig,
     },
   );

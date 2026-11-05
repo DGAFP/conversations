@@ -183,6 +183,8 @@ class ChatConversation(BaseModel):
         blank=True,
     )
 
+    ministry = models.CharField(max_length=10, blank=True, default="", editable=False)
+
     model_hrid = models.CharField(
         max_length=100,
         blank=True,
@@ -205,6 +207,7 @@ class ChatConversation(BaseModel):
         indexes = [
             models.Index(fields=["owner", "-created_at"]),
             models.Index(fields=["owner", "project"]),
+            models.Index(fields=["owner", "ministry", "-created_at"]),
             # Global "most recently updated first" listing, used by the admin changelist.
             models.Index(fields=["-updated_at", "-id"]),
         ]

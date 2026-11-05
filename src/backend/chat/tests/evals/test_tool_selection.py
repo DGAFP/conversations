@@ -18,6 +18,7 @@ from chat.evals.production_agent import (
     stub_web_search,
 )
 from chat.llm_configuration import LLModel, LLMProvider, LLMSettings
+from chat.tests.utils import unwrap_instruction
 
 pytestmark = pytest.mark.django_db
 
@@ -60,7 +61,7 @@ def ai_settings_fixture(settings):
 def _resolve_instruction(service, name: str) -> str:
     matches = [
         fn
-        for fn in service.conversation_agent._instructions
+        for fn in map(unwrap_instruction, service.conversation_agent._instructions)
         if callable(fn) and fn.__name__ == name
     ]
     assert matches, f"instruction '{name}' not registered on the agent"

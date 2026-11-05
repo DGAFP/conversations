@@ -15,6 +15,7 @@ from chat.clients.schema import StreamingState
 from chat.factories import ChatConversationFactory
 from chat.mcp_servers import DataGouvConnector
 from chat.tests.clients.pydantic_ai.test_run_agent_summary import _run_agent_patches
+from chat.tests.utils import unwrap_instruction
 from chat.vercel_ai_sdk.core import events_v4
 
 pytestmark = pytest.mark.django_db
@@ -94,6 +95,24 @@ def test_forcing_cannot_bypass_availability(conversation):
     assert not _toolsets_for(service, opted_in=True, forced=True)
 
 
+def test_assistant_rh_disables_connector_even_when_forced(conversation, settings):
+    """The fork's external-source restriction also covers the new connector."""
+    settings.ASSISTANT_RH_ENABLED = True
+    settings.DATAGOUV_CONNECTOR_URL = "https://mcp.data.gouv.fr/mcp"
+    with (
+        patch("chat.mcp_servers.is_feature_enabled", return_value=True),
+        patch("chat.clients.pydantic_ai.ConversationAgent"),
+    ):
+        service = AIAgentService(
+            conversation=conversation,
+            user=conversation.owner,
+            model_hrid=None,
+            language="en-us",
+        )
+
+    assert not _toolsets_for(service, opted_in=True, forced=True)
+
+
 @pytest.mark.asyncio
 async def test_reachable_forced_connector_instructs_the_model_to_use_it(service):
     """A force is an instruction, not just an available tool."""
@@ -108,7 +127,7 @@ def test_unreachable_forced_connector_tells_the_model_to_say_so(service):
     """The answer is produced, but it owns up to what it could not consult."""
     _force(service, connected=False)
 
-    instruction = service.conversation_agent._instructions[-1]()
+    instruction = unwrap_instruction(service.conversation_agent._instructions[-1])()
     assert "could not" in instruction.lower()
     assert "data.gouv.fr" in instruction
 

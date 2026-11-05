@@ -1,0 +1,13 @@
+{% extends "assistant_rh/base.html" %}
+{% block title %}Connexion — Assistant RH{% endblock %}
+{% block content %}
+<h1>Connexion à Assistant RH</h1>
+<p>Utilisez le compte fourni par votre administrateur.</p>
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <input type="hidden" name="next" value="{{ next }}">
+  <button type="submit">Se connecter</button>
+</form>
+<p>Pour obtenir un accès ou réinitialiser votre mot de passe, contactez votre administrateur.</p>
+{% endblock %}

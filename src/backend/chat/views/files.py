@@ -2,6 +2,7 @@
 
 import logging
 
+from django.conf import settings
 from django.core.cache import cache
 from django.core.files.storage import default_storage
 from django.http import Http404, StreamingHttpResponse
@@ -42,6 +43,9 @@ class FileStreamView(APIView):
         Returns:
             StreamingHttpResponse with file content
         """
+        if settings.ASSISTANT_RH_ENABLED:
+            raise Http404
+
         # Retrieve the S3 key from cache using the temporary key
         cache_key = f"file_access:{temporary_key}"
         s3_key = cache.get(cache_key)

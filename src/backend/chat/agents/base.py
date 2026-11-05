@@ -12,6 +12,7 @@ from pydantic_ai.capabilities import Hooks
 from pydantic_ai.models import get_user_agent
 from pydantic_ai.profiles import ModelProfile
 
+from chat.assistant_rh_delegation import delegated_model
 from chat.tools import get_pydantic_tools_by_name
 
 logger = logging.getLogger(__name__)
@@ -178,7 +179,7 @@ class BaseAgent(Agent):
     This class initializes the agent with model from configuration.
     """
 
-    def __init__(self, *, model_hrid, **kwargs):
+    def __init__(self, *, model_hrid, delegation_context=None, **kwargs):
         """Initialize the agent with model configuration from settings."""
         _ignored_kwargs = {"model", "system_prompt", "tools", "toolsets"}
         if set(kwargs).intersection(_ignored_kwargs):
@@ -191,7 +192,14 @@ class BaseAgent(Agent):
                 f"LLM model configuration '{model_hrid}' not found."
             ) from exc
 
-        if self.configuration.is_custom:
+        if settings.ASSISTANT_RH_ENABLED:
+            if (
+                not self.configuration.provider
+                or self.configuration.provider.kind != "assistant-rh"
+            ):
+                raise ImproperlyConfigured("Assistant RH requires its delegated API provider.")
+            _model_instance = delegated_model(self.configuration, delegation_context)
+        elif self.configuration.is_custom:
             _model_instance = prepare_custom_model(self.configuration)
         else:
             # In this case, we rely on PydanticAI's built-in model registry
@@ -240,6 +248,6 @@ class BaseAgent(Agent):
 
     def get_tools(self) -> list | None:
         """Override this method to customize tools."""
-        if not self.configuration.tools:
+        if settings.ASSISTANT_RH_ENABLED or not self.configuration.tools:
             return []
         return [get_pydantic_tools_by_name(tool_name) for tool_name in self.configuration.tools]
