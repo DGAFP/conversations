@@ -15,6 +15,7 @@ import SourcesIcon from '@/assets/icons/uikit-custom/sources.svg?react';
 import { Box, Loader, Text } from '@/components';
 import { useConfig } from '@/core/config';
 import { SkippableFileUIPart } from '@/features/chat/api/useChat';
+import { AssistantRHFeedback } from '@/features/chat/components/AssistantRHFeedback';
 import { assistantRHSources } from '@/features/chat/components/AssistantRHSources';
 import { AttachmentList } from '@/features/chat/components/AttachmentList';
 import { FeedbackButtons } from '@/features/chat/components/FeedbackButtons';
@@ -677,14 +678,31 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                   {co2ImpactKg !== undefined && (
                     <MessageEnergyIndicator co2ImpactKg={co2ImpactKg} />
                   )}
-                  {conversationId && message.id?.startsWith('trace-') && (
-                    <FeedbackButtons
-                      conversationId={conversationId}
-                      messageId={message.id}
-                    />
-                  )}
+                  {!isRHResponse &&
+                    conversationId &&
+                    message.id?.startsWith('trace-') && (
+                      <FeedbackButtons
+                        conversationId={conversationId}
+                        messageId={message.id}
+                      />
+                    )}
                 </Box>
               </Box>
+            )}
+          {isRHResponse &&
+            hasAssistantOutput &&
+            conversationId &&
+            message.id &&
+            (
+              message.metadata as
+                { assistant_rh?: { status?: string } } | undefined
+            )?.assistant_rh?.status === 'available' &&
+            !(isLastAssistantMessage && status === 'streaming') && (
+              <AssistantRHFeedback
+                key={`${conversationId}-${message.id}`}
+                conversationId={conversationId}
+                messageId={message.id}
+              />
             )}
         </Box>
       </Box>

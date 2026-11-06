@@ -8,6 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- ✨(chat) add per-answer RH star ratings and detailed feedback.
+
 - Integrate upstream v0.0.28 while preserving RH authentication and sources.
 - Keep RH login forms usable under the new nonce-based security policy.
 - Preserve admin lockout protection in password-only RH deployments.

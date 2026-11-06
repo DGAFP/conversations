@@ -22,6 +22,7 @@ from chat.views import (
     ModelHealthView,
 )
 from chat.views.assistant_rh_documents import document as assistant_rh_document
+from chat.views.assistant_rh_feedback import AssistantRHFeedbackView
 
 # - Main endpoints
 router = DefaultRouter()
@@ -42,6 +43,11 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/",
         include(
             [
+                path(
+                    "chats/<uuid:conversation_id>/messages/<str:message_id>/feedback/",
+                    AssistantRHFeedbackView.as_view(),
+                    name="assistant-rh-feedback",
+                ),
                 path(
                     "chats/<uuid:conversation_id>/messages/<str:message_id>/"
                     "sources/<int:source_index>/",

@@ -1,5 +1,6 @@
 /* eslint-disable testing-library/no-unnecessary-act, @typescript-eslint/require-await */
 import { CunninghamProvider } from '@gouvfr-lasuite/cunningham-react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Suspense } from 'react';
@@ -974,6 +975,74 @@ describe('MessageItem', () => {
   });
 
   describe('feedback buttons', () => {
+    describe('Assistant RH evaluations', () => {
+      beforeEach(() => {
+        mockConfig.ASSISTANT_RH_ENABLED = true;
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+        );
+      });
+
+      afterEach(() => vi.unstubAllGlobals());
+
+      it('renders real stars after streaming finishes even without a trace-prefixed message ID', async () => {
+        const client = new QueryClient({
+          defaultOptions: { queries: { retry: false } },
+        });
+        const message = {
+          ...defaultProps.message,
+          metadata: { assistant_rh: { status: 'available', sources: [] } },
+        };
+        const content = (streaming: boolean) =>
+          withProviders(
+            <QueryClientProvider client={client}>
+              <MessageItem
+                {...defaultProps}
+                message={message}
+                isLastAssistantMessage
+                status={streaming ? 'streaming' : 'ready'}
+              />
+            </QueryClientProvider>,
+          );
+        const { rerender } = render(content(true));
+        expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+        rerender(content(false));
+        expect(await screen.findAllByRole('radio')).toHaveLength(5);
+        expect(
+          screen.queryByTestId('feedback-buttons'),
+        ).not.toBeInTheDocument();
+        await userEvent.click(
+          screen.getByRole('radio', { name: /^3 étoiles/ }),
+        );
+        expect(
+          screen.getByRole('checkbox', { name: 'Clair' }),
+        ).toBeInTheDocument();
+      });
+
+      it.each([undefined, 'unavailable'])(
+        'hides evaluations without an authoritative run (%s)',
+        async (status) => {
+          renderWithProviders(
+            <MessageItem
+              {...defaultProps}
+              message={{
+                ...defaultProps.message,
+                id: 'trace-123',
+                metadata: { assistant_rh: { status, sources: [] } },
+              }}
+            />,
+          );
+          await screen.findByTestId('markdown-content');
+          expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+          expect(
+            screen.queryByTestId('feedback-buttons'),
+          ).not.toBeInTheDocument();
+          expect(fetch).not.toHaveBeenCalled();
+        },
+      );
+    });
+
     it('renders FeedbackButtons for trace messages', async () => {
       await act(async () => {
         renderWithProviders(
