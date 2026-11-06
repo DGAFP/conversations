@@ -1,11 +1,9 @@
 """Unit tests for AIAgentService stream methods."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-import httpx
 import pytest
 from asgiref.sync import sync_to_async
-from mistralai.client.errors import HTTPValidationError, HTTPValidationErrorData, SDKError
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 
 from chat.ai_sdk_types import UIMessage
@@ -81,6 +79,33 @@ async def test_stream_data_async_formats_as_sdk_events(ui_messages):
 
 
 @pytest.mark.asyncio
+async def test_stream_data_async_forwards_datagouv_and_closes_assistant_rh_client(
+    ui_messages, settings
+):
+    """The upstream force argument survives the fork's client cleanup path."""
+    conversation = await sync_to_async(ChatConversationFactory)()
+    service = AIAgentService(conversation, user=conversation.owner)
+    settings.ASSISTANT_RH_ENABLED = True
+
+    async def mock_run_agent(*args, **kwargs):
+        yield events_v4.TextPart(text="Hello")
+
+    with (
+        patch.object(service, "_run_agent", side_effect=mock_run_agent) as run_agent,
+        patch.object(
+            service.conversation_agent.model.client, "close", new=AsyncMock()
+        ) as close_client,
+    ):
+        async for _ in service.stream_data_async(
+            ui_messages, force_web_search=True, force_datagouv=True
+        ):
+            pass
+
+    run_agent.assert_called_once_with(ui_messages, True, True)
+    close_client.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
 async def test_stream_data_async_emits_model_busy_on_503():
     """503 ModelHTTPError emits model_busy ErrorPart."""
     conversation = await sync_to_async(ChatConversationFactory)()
@@ -151,44 +176,13 @@ async def test_stream_data_async_emits_model_connection_error_on_api_error():
 
 
 @pytest.mark.asyncio
-async def test_stream_data_async_emits_model_busy_on_sdk_error_503():
-    """Mistral SDKError with 503 emits model_busy ErrorPart."""
+async def test_stream_data_async_emits_model_wrong_type_on_422():
+    """422 ModelHTTPError emits model_wrong_type ErrorPart."""
     conversation = await sync_to_async(ChatConversationFactory)()
     service = AIAgentService(conversation, user=conversation.owner)
 
-    mock_response = MagicMock(spec=httpx.Response)
-    mock_response.status_code = 503
-    mock_response.text = ""
-    mock_response.headers = httpx.Headers()
-
     def mock_run_agent(*args, **kwargs):
-        return AsyncRaiseIterator(
-            SDKError(message="service unavailable", raw_response=mock_response)
-        )
-
-    with patch.object(service, "_run_agent", side_effect=mock_run_agent):
-        results = []
-        async for result in service.stream_data_async([]):
-            results.append(result)
-
-    assert stream_body(results) == ['{"type":"error","errorText":"model_busy"}']
-
-
-@pytest.mark.asyncio
-async def test_stream_data_async_emits_model_wrong_type_on_http_validation_error_422():
-    """Mistral HTTPValidationError with 422 emits model_wrong_type ErrorPart."""
-    conversation = await sync_to_async(ChatConversationFactory)()
-    service = AIAgentService(conversation, user=conversation.owner)
-
-    mock_response = MagicMock(spec=httpx.Response)
-    mock_response.status_code = 422
-    mock_response.text = ""
-    mock_response.headers = httpx.Headers()
-
-    def mock_run_agent(*args, **kwargs):
-        return AsyncRaiseIterator(
-            HTTPValidationError(data=HTTPValidationErrorData(), raw_response=mock_response)
-        )
+        return AsyncRaiseIterator(ModelHTTPError(status_code=422, model_name="test-model"))
 
     with patch.object(service, "_run_agent", side_effect=mock_run_agent):
         results = []
@@ -213,61 +207,7 @@ async def test_stream_data_async_reraises_unknown_exceptions():
                 pass
 
 
-@pytest.mark.asyncio
-async def test_stream_data_async_persists_user_message_on_http_error(ui_messages):
-    """On LLM provider error, the user message is saved to conversation.messages."""
-    conversation = await sync_to_async(ChatConversationFactory)()
-    assert conversation.messages == []
-
-    service = AIAgentService(conversation, user=conversation.owner)
-
-    def mock_run_agent(*args, **kwargs):
-        return AsyncRaiseIterator(ModelHTTPError(status_code=503, model_name="test-model"))
-
-    with patch.object(service, "_run_agent", side_effect=mock_run_agent):
-        async for _ in service.stream_data_async(ui_messages):
-            pass
-
-    await sync_to_async(conversation.refresh_from_db)()
-    assert len(conversation.messages) == 1
-    assert conversation.messages[0].role == "user"
-    assert conversation.messages[0].id == ui_messages[0].id
-
-
-@pytest.mark.asyncio
-async def test_stream_data_async_persists_user_message_on_connection_error(ui_messages):
-    """On ModelAPIError, the user message is saved to conversation.messages."""
-    conversation = await sync_to_async(ChatConversationFactory)()
-    service = AIAgentService(conversation, user=conversation.owner)
-
-    def mock_run_agent(*args, **kwargs):
-        return AsyncRaiseIterator(
-            ModelAPIError(model_name="test-model", message="Connection error.")
-        )
-
-    with patch.object(service, "_run_agent", side_effect=mock_run_agent):
-        async for _ in service.stream_data_async(ui_messages):
-            pass
-
-    await sync_to_async(conversation.refresh_from_db)()
-    assert len(conversation.messages) == 1
-    assert conversation.messages[0].role == "user"
-
-
-@pytest.mark.asyncio
-async def test_stream_data_async_does_not_duplicate_user_message_on_repeated_error(ui_messages):
-    """Repeated errors with the same message do not accumulate duplicates."""
-    conversation = await sync_to_async(ChatConversationFactory)()
-    service = AIAgentService(conversation, user=conversation.owner)
-
-    def mock_run_agent(*args, **kwargs):
-        return AsyncRaiseIterator(ModelHTTPError(status_code=503, model_name="test-model"))
-
-    with patch.object(service, "_run_agent", side_effect=mock_run_agent):
-        async for _ in service.stream_data_async(ui_messages):
-            pass
-        async for _ in service.stream_data_async(ui_messages):
-            pass
-
-    await sync_to_async(conversation.refresh_from_db)()
-    assert len(conversation.messages) == 1
+# A turn's question is stored by the turn itself, in its chunk trail, so the
+# error paths no longer carry a copy of it and there is no helper left to
+# mock. Driving a real run that fails is what proves it now, in
+# `test_stream_chunks.test_a_turn_that_errors_stores_its_question_once`.

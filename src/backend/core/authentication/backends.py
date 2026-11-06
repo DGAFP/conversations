@@ -7,6 +7,7 @@ import time
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
 
+import jwt
 from lasuite.oidc_login.backends import (
     OIDCAuthenticationBackend as LaSuiteOIDCAuthenticationBackend,
 )
@@ -36,7 +37,12 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
 
     def verify_token(self, token, **kwargs):
         """Keep upstream signature/nonce verification and enforce the RH token audience."""
-        payload = super().verify_token(token, **kwargs)
+        try:
+            payload = super().verify_token(token, **kwargs)
+        except jwt.InvalidTokenError as exc:
+            # Mozilla OIDC now validates claims with PyJWT; these failures must
+            # follow the same authentication refusal path as our RH checks.
+            raise SuspiciousOperation("Invalid OIDC token claims.") from exc
         if not (settings.ASSISTANT_RH_ENABLED and settings.ASSISTANT_RH_OIDC_ENABLED):
             return payload
         now = time.time()

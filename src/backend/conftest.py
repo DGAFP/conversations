@@ -1,10 +1,14 @@
 """Global fixtures for the backend tests."""
 
-from importlib import import_module
-
 import freezegun
 import posthog
 import pytest
+import respx.mocks
+from httpcore._backends.anyio import AnyIOBackend
+from httpcore._backends.sync import SyncBackend
+from httpcore2._backends.anyio import AnyIOBackend as AnyIOBackend2
+from httpcore2._backends.sync import SyncBackend as SyncBackend2
+from pytest_httpx2._plugin import HTTPCore2Mocker
 from respx.mocks import HTTPCoreMocker
 from rest_framework.test import APIClient
 from urllib3.connectionpool import HTTPConnectionPool
@@ -16,12 +20,15 @@ from urllib3.connectionpool import HTTPConnectionPool
 # permanently for the rest of the worker process. Skip scanning langfuse.
 freezegun.configure(extend_ignore_list=["langfuse"])
 
-# Pydantic AI 2.53 / OpenAI 3 use HTTPX2. RESPX 0.23 targets HTTPcore 1
-# by default; register the equivalent transports so the same routes and
-# assertions cover both clients without reaching the network.
-HTTPCoreMocker.add_targets(
-    *(target.replace("httpcore.", "httpcore2.", 1) for target in tuple(HTTPCoreMocker.targets))
-)
+
+class DualHTTPCoreMocker(HTTPCore2Mocker):
+    """Patch both HTTPX generations used by the application and its AI providers."""
+
+    name = "dual-httpcore"
+    targets = [*HTTPCoreMocker.targets, *HTTPCore2Mocker.targets]
+
+
+respx.mocks.DEFAULT_MOCKER = DualHTTPCoreMocker.name
 
 
 @pytest.fixture
@@ -37,14 +44,15 @@ def no_http_requests(monkeypatch):
     This is useful for tests that do not require actual HTTP requests
     and helps to avoid network-related issues.
 
-    Both HTTPX generations are covered, plus urllib3 used by `requests` (pulled in by
+    Both transports are covered: urllib3, used by `requests` (still pulled in by
     third-party libraries such as mozilla-django-oidc, posthog and the OTLP
-    exporter), and HTTPcore 1/2 used by the two HTTPX clients.
+    exporter), httpcore, used by `httpx` for our own outbound calls, and
+    httpcore2, used by `httpx2` for the clients pydantic-ai creates (LLM calls).
 
-    The httpcore patch sits on the network backend rather than on the connection
-    pool, which is where respx installs its own patch. A mocked route is served
-    by respx and never opens a socket, so this guard only fires for calls no test
-    mocked at all.
+    The httpcore/httpcore2 patches sit on the network backend rather than on the
+    connection pool, which is where respx (and pytest-httpx2's `httpx2_mock`)
+    installs its own patch. A mocked route is served by respx and never opens a
+    socket, so this guard only fires for calls no test mocked at all.
 
     Credits: https://blog.jerrycodes.com/no-http-requests/
     """
@@ -60,29 +68,40 @@ def no_http_requests(monkeypatch):
 
     monkeypatch.setattr("urllib3.connectionpool.HTTPConnectionPool.urlopen", urlopen_mock)
 
-    def refuse(host, port):
+    original_connect_tcp = SyncBackend.connect_tcp
+    original_connect_tcp_async = AnyIOBackend.connect_tcp
+
+    def _refuse(host, port):
+        """Raise unless the connection targets an allowed host."""
         if host not in allowed_hosts and f"{host}:{port}" not in allowed_hosts:
             raise RuntimeError(f"The test was about to connect to {host}:{port}")
 
-    def guard_sync(original):
-        def connect_tcp(self, host, port, *args, **kwargs):
-            refuse(host, port)
-            return original(self, host, port, *args, **kwargs)
+    def connect_tcp_mock(self, host, port, *args, **kwargs):
+        _refuse(host, port)
+        return original_connect_tcp(self, host, port, *args, **kwargs)
 
-        return connect_tcp
+    async def connect_tcp_async_mock(self, host, port, *args, **kwargs):
+        _refuse(host, port)
+        return await original_connect_tcp_async(self, host, port, *args, **kwargs)
 
-    def guard_async(original):
-        async def connect_tcp(self, host, port, *args, **kwargs):
-            refuse(host, port)
-            return await original(self, host, port, *args, **kwargs)
+    monkeypatch.setattr("httpcore._backends.sync.SyncBackend.connect_tcp", connect_tcp_mock)
+    monkeypatch.setattr("httpcore._backends.anyio.AnyIOBackend.connect_tcp", connect_tcp_async_mock)
 
-        return connect_tcp
+    original_connect_tcp2 = SyncBackend2.connect_tcp
+    original_connect_tcp2_async = AnyIOBackend2.connect_tcp
 
-    for package in ("httpcore", "httpcore2"):
-        sync_backend = import_module(f"{package}._backends.sync").SyncBackend
-        async_backend = import_module(f"{package}._backends.anyio").AnyIOBackend
-        monkeypatch.setattr(sync_backend, "connect_tcp", guard_sync(sync_backend.connect_tcp))
-        monkeypatch.setattr(async_backend, "connect_tcp", guard_async(async_backend.connect_tcp))
+    def connect_tcp2_mock(self, host, port, *args, **kwargs):
+        _refuse(host, port)
+        return original_connect_tcp2(self, host, port, *args, **kwargs)
+
+    async def connect_tcp2_async_mock(self, host, port, *args, **kwargs):
+        _refuse(host, port)
+        return await original_connect_tcp2_async(self, host, port, *args, **kwargs)
+
+    monkeypatch.setattr("httpcore2._backends.sync.SyncBackend.connect_tcp", connect_tcp2_mock)
+    monkeypatch.setattr(
+        "httpcore2._backends.anyio.AnyIOBackend.connect_tcp", connect_tcp2_async_mock
+    )
 
 
 @pytest.fixture(name="feature_flags", scope="function")

@@ -9,7 +9,6 @@ from unittest.mock import ANY, patch
 from django.utils import timezone
 
 import pytest
-import respx
 from asgiref.sync import sync_to_async
 from dirty_equals import IsUUID
 from freezegun import freeze_time
@@ -94,7 +93,7 @@ def _make_pydantic_request(  # pylint: disable=too-many-arguments,too-many-posit
     }
 
 
-def _make_pydantic_text_response(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913
+def _make_pydantic_text_response(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913, PLR0917
     run_id,
     content,
     timestamp=FROZEN_TIMESTAMP,
@@ -131,6 +130,7 @@ def _make_pydantic_text_response(  # pylint: disable=too-many-arguments,too-many
         "timestamp": timestamp,
         "usage": usage if usage is not None else ZERO_USAGE,
         "run_id": run_id,
+        "workspace_ref": None,
     }
 
 
@@ -208,8 +208,21 @@ def test_post_conversation_no_messages(api_client):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
-@respx.mock
+def test_post_conversation_invalid_messages_does_not_log_user_prompt(api_client, caplog):
+    """An invalid payload is logged without echoing the user's input."""
+    chat_conversation = ChatConversationFactory()
+    url = f"/api/v1.0/chats/{chat_conversation.pk}/conversation/"
+    api_client.force_login(chat_conversation.owner)
+
+    with caplog.at_level(logging.DEBUG):
+        response = api_client.post(url, {"messages": ["My secret prompt"]}, format="json")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Frontend input error on fields: ['messages']" in caplog.text
+    assert "My secret prompt" not in caplog.text
+
+
+@freeze_time("2025-07-25T10:36:35.297675Z")
 def test_post_conversation_data_protocol(api_client, mock_openai_stream, hello_conversation_data):
     """Test posting messages to a conversation using the 'data' protocol."""
     chat_conversation = ChatConversationFactory(owner__language="en-us")
@@ -227,7 +240,7 @@ def test_post_conversation_data_protocol(api_client, mock_openai_stream, hello_c
 
     assert mock_openai_stream.called
 
-    _assert_english_system_prompts(json.loads(respx.calls.last.request.content))
+    _assert_english_system_prompts(json.loads(mock_openai_stream.calls.last.request.content))
 
     chat_conversation.refresh_from_db()
     _assert_hello_ui_messages(chat_conversation)
@@ -240,8 +253,7 @@ def test_post_conversation_data_protocol(api_client, mock_openai_stream, hello_c
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
-@respx.mock
+@freeze_time("2025-07-25T10:36:35.297675Z")
 @patch("chat.keepalive.get_current_time")
 def test_post_conversation_data_protocol_drops_keepalive_after_the_terminator(
     mock_time, api_client, mock_openai_stream, hello_conversation_data
@@ -288,8 +300,7 @@ def test_post_conversation_data_protocol_drops_keepalive_after_the_terminator(
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
-@respx.mock
+@freeze_time("2025-07-25T10:36:35.297675Z")
 def test_post_conversation_with_image(api_client, mock_openai_stream_image):
     """Ensure an image URL is correctly forwarded to the AI service."""
     chat_conversation = ChatConversationFactory(owner__language="en-us")
@@ -439,8 +450,7 @@ def test_post_conversation_with_image(api_client, mock_openai_stream_image):
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
-@respx.mock
+@freeze_time("2025-07-25T10:36:35.297675Z")
 def test_post_conversation_tool_call(api_client, mock_openai_stream_tool, settings):
     """Ensure tool calls are correctly forwarded and streamed back."""
     settings.AI_AGENT_TOOLS = ["get_current_weather"]
@@ -559,6 +569,7 @@ def test_post_conversation_tool_call(api_client, mock_openai_stream_tool, settin
             },
             "provider_name": "openai",
             "provider_response_id": "chatcmpl-tool-call",
+            "workspace_ref": None,
             "provider_url": "https://www.external-ai-service.com/",
             "state": "complete",
             "timestamp": FROZEN_TIMESTAMP,
@@ -594,8 +605,7 @@ def test_post_conversation_tool_call(api_client, mock_openai_stream_tool, settin
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
-@respx.mock
+@freeze_time("2025-07-25T10:36:35.297675Z")
 def test_post_conversation_tool_call_fails(api_client, mock_openai_stream_tool):
     """Ensure tool calls are correctly forwarded and streamed back when failing."""
 
@@ -720,6 +730,7 @@ def test_post_conversation_tool_call_fails(api_client, mock_openai_stream_tool):
             },
             "provider_name": "openai",
             "provider_response_id": "chatcmpl-tool-call",
+            "workspace_ref": None,
             "provider_url": "https://www.external-ai-service.com/",
             "state": "complete",
             "timestamp": FROZEN_TIMESTAMP,
@@ -776,8 +787,7 @@ def test_post_conversation_model_selection_invalid(api_client):
     assert response.json() == {"model_hrid": ["Invalid model_hrid."]}
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
-@respx.mock
+@freeze_time("2025-07-25T10:36:35.297675Z")
 def test_post_conversation_model_selection_new(
     api_client,
     mock_openai_stream,
@@ -820,7 +830,6 @@ def test_post_conversation_model_selection_new(
 
 @freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @pytest.mark.parametrize("stream_delay", [None, 0.0001])
-@respx.mock
 def test_post_conversation_data_protocol_no_stream(
     api_client,
     mock_openai_no_stream,
@@ -976,8 +985,7 @@ def test_post_conversation_data_protocol_no_stream(
     ]
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
-@respx.mock
+@freeze_time("2025-07-25T10:36:35.297675Z")
 @pytest.mark.asyncio
 async def test_post_conversation_async(api_client, mock_openai_stream, monkeypatch, caplog):
     """Test posting messages to a conversation using the 'data' protocol."""
@@ -1051,7 +1059,6 @@ async def test_post_conversation_async(api_client, mock_openai_stream, monkeypat
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z", tick=True)
-@respx.mock
 @pytest.mark.asyncio
 async def test_post_conversation_async_triggers_keepalive(
     api_client, mock_openai_stream_slow, monkeypatch, caplog, settings
@@ -1167,8 +1174,7 @@ def test_post_conversation_oidc_refresh_enabled_unrefreshed(  # pylint: disable=
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
-@respx.mock
+@freeze_time("2025-07-25T10:36:35.297675Z")
 def test_post_conversation_oidc_refresh_enabled(  # pylint: disable=unused-argument
     api_client, mock_openai_stream, oidc_refresh_token_enabled, hello_conversation_data
 ):
@@ -1195,7 +1201,7 @@ def test_post_conversation_oidc_refresh_enabled(  # pylint: disable=unused-argum
 
     assert mock_openai_stream.called
 
-    _assert_english_system_prompts(json.loads(respx.calls.last.request.content))
+    _assert_english_system_prompts(json.loads(mock_openai_stream.calls.last.request.content))
 
     chat_conversation.refresh_from_db()
     _assert_hello_ui_messages(chat_conversation)
@@ -1204,8 +1210,7 @@ def test_post_conversation_oidc_refresh_enabled(  # pylint: disable=unused-argum
     assert len(chat_conversation.pydantic_messages) == 2
 
 
-@freeze_time(FROZEN_TIMESTAMP, real_asyncio=True)
-@respx.mock
+@freeze_time(FROZEN_TIMESTAMP)
 def test_post_conversation_is_not_affected_by_the_creation_throttle(
     api_client, mock_openai_stream, hello_conversation_data
 ):

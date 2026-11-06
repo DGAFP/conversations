@@ -16,7 +16,7 @@ import { ToastProvider } from '@/components/ToastProvider';
 import { getConversation } from '@/features/chat/api/useConversation';
 import { usePendingChatStore } from '@/features/chat/stores/usePendingChatStore';
 
-import { Chat } from '../Chat';
+import { Chat, REMOTE_STREAM_POLL_MS } from '../Chat';
 
 // jsdom implements no scrolling; the component scrolls to the latest message.
 Element.prototype.scrollTo = () => {};
@@ -102,6 +102,20 @@ const ANSWER_STREAM = [
   'data: [DONE]\n\n',
 ].join('');
 
+// Mirrors the wire shape emitted by `_report_forced_connector` in
+// `pydantic_ai.py`: a `chat_notice`-kind `connector_unavailable` data part,
+// kebab-cased to `data-connector-unavailable` on the wire, ahead of the
+// answer text.
+const CONNECTOR_UNAVAILABLE_STREAM = [
+  'data: {"type":"start"}\n\n',
+  'data: {"type":"data-connector-unavailable","data":{"type":"connector_unavailable","kind":"chat_notice","connector_id":"datagouv"},"transient":true}\n\n',
+  'data: {"type":"text-start","id":"t1"}\n\n',
+  'data: {"type":"text-delta","id":"t1","delta":"An answer without DataGouv."}\n\n',
+  'data: {"type":"text-end","id":"t1"}\n\n',
+  'data: {"type":"finish"}\n\n',
+  'data: [DONE]\n\n',
+].join('');
+
 const streamOf = (payload: string) =>
   new ReadableStream({
     start(controller) {
@@ -156,6 +170,113 @@ const ask = async (text: string) => {
   await userEvent.type(box, text);
   await userEvent.keyboard('{Enter}');
 };
+
+describe('a turn that runs without us', () => {
+  const fetchAPIMock = vi.mocked(fetchAPI) as unknown as Mock;
+  const getConversationMock = vi.mocked(getConversation) as unknown as Mock;
+
+  const QUESTION = {
+    id: 'server-u1',
+    role: 'user' as const,
+    parts: [{ type: 'text' as const, text: 'A question' }],
+  };
+  const CHECKPOINT = {
+    id: 'server-a1',
+    role: 'assistant' as const,
+    parts: [{ type: 'text' as const, text: 'Half an' }],
+    metadata: { interrupted: true },
+  };
+  const FINAL_ANSWER = {
+    id: 'server-a1',
+    role: 'assistant' as const,
+    parts: [{ type: 'text' as const, text: 'Half an answer, then the rest.' }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    usePendingChatStore.setState({ input: '', files: null });
+    fetchAPIMock.mockImplementation((url: string) => {
+      if (url.startsWith('chat-cooldown')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ cooldown_seconds: 0 }),
+        });
+      }
+      return Promise.resolve({ ok: true, body: streamOf(ANSWER_STREAM) });
+    });
+  });
+
+  it('waits on a checkpoint the backend still reports as streaming', async () => {
+    getConversationMock.mockResolvedValue({
+      messages: [QUESTION, CHECKPOINT],
+      is_streaming: true,
+    });
+
+    renderChat();
+
+    expect(await screen.findByText('Thinking...')).toBeInTheDocument();
+    // The same checkpoint would otherwise be called interrupted: it is only
+    // the final word once the turn behind it is over.
+    expect(screen.queryByTestId('interrupted-answer')).not.toBeInTheDocument();
+  });
+
+  it('shows the finished answer once the turn ends', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      getConversationMock
+        .mockResolvedValueOnce({
+          messages: [QUESTION, CHECKPOINT],
+          is_streaming: true,
+        })
+        .mockResolvedValue({
+          messages: [QUESTION, FINAL_ANSWER],
+          is_streaming: false,
+        });
+
+      renderChat();
+
+      expect(await screen.findByText('Thinking...')).toBeInTheDocument();
+
+      await vi.advanceTimersByTimeAsync(REMOTE_STREAM_POLL_MS);
+
+      await waitFor(() =>
+        expect(screen.queryByText('Thinking...')).not.toBeInTheDocument(),
+      );
+      expect(messageTexts()).toEqual([
+        'You said: A question',
+        'Assistant IA replied: Half an answer, then the rest.',
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('offers to stop a turn running without us, not to send into it', async () => {
+    getConversationMock.mockResolvedValue({
+      messages: [QUESTION, CHECKPOINT],
+      is_streaming: true,
+    });
+
+    renderChat();
+
+    // Stop works on a turn this client is not streaming: it asks the backend
+    // to stop, so showing it is not an empty promise.
+    expect(await screen.findByLabelText('Stop')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Send')).not.toBeInTheDocument();
+  });
+
+  it('calls a checkpoint interrupted once nothing is streaming', async () => {
+    getConversationMock.mockResolvedValue({
+      messages: [QUESTION, CHECKPOINT],
+      is_streaming: false,
+    });
+
+    renderChat();
+
+    expect(await screen.findByTestId('interrupted-answer')).toBeInTheDocument();
+    expect(screen.queryByText('Thinking...')).not.toBeInTheDocument();
+  });
+});
 
 describe('Chat message ownership', () => {
   const fetchAPIMock = vi.mocked(fetchAPI) as unknown as Mock;
@@ -453,5 +574,76 @@ describe('RH sources panel', () => {
       'Références documentaires indisponibles',
     );
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+});
+
+describe('Chat connector notices', () => {
+  const fetchAPIMock = vi.mocked(fetchAPI) as unknown as Mock;
+  const getConversationMock = vi.mocked(getConversation) as unknown as Mock;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    usePendingChatStore.setState({ input: '', files: null });
+    getConversationMock.mockResolvedValue({ messages: [] });
+  });
+
+  it('raises a toast, findable by its accessible name, when a forced connector was unreachable', async () => {
+    // Drives the real stream-parsing path (DefaultChatTransport -> useChat's
+    // onData -> Chat's onConnectorUnavailable -> showToast), the same one the
+    // app uses, rather than calling the handler directly.
+    fetchAPIMock.mockImplementation((url: string) => {
+      if (url.startsWith('chat-cooldown')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ cooldown_seconds: 0 }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        body: streamOf(CONNECTOR_UNAVAILABLE_STREAM),
+      });
+    });
+
+    renderChat();
+
+    await act(async () => {
+      await ask('Force datagouv');
+    });
+
+    // `react-i18next` is mocked to `t: (key) => key`, so the translation key
+    // is exactly the rendered, screen-reader-announced text: the toast lives
+    // in a `aria-live="polite"` region, and this asserts on what a user (or
+    // assistive tech) actually perceives, not on an internal `showToast` call.
+    expect(
+      await screen.findByText('DataGouv could not be reached'),
+    ).toBeInTheDocument();
+  });
+
+  it('raises no toast when the connector was reachable', async () => {
+    fetchAPIMock.mockImplementation((url: string) => {
+      if (url.startsWith('chat-cooldown')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ cooldown_seconds: 0 }),
+        });
+      }
+      return Promise.resolve({ ok: true, body: streamOf(ANSWER_STREAM) });
+    });
+
+    renderChat();
+
+    await act(async () => {
+      await ask('An ordinary question');
+    });
+
+    await waitFor(() =>
+      expect(messageTexts()).toEqual([
+        'You said: An ordinary question',
+        'Assistant IA replied: An answer.',
+      ]),
+    );
+    expect(
+      screen.queryByText('DataGouv could not be reached'),
+    ).not.toBeInTheDocument();
   });
 });

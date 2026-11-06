@@ -11,11 +11,12 @@ from pydantic_ai.models.openai import OpenAIChatModel
 
 from chat.agents.conversation import ConversationAgent
 from chat.llm_configuration import LLModel, LLMProvider
-from chat.tests.utils import agent_instructions
+from chat.tests.utils import unwrap_instruction
 
 
 def assert_base_instructions(instructions, date_str=None, language_str=""):
     """Assert the standard set of ConversationAgent instructions are registered."""
+    instructions = [unwrap_instruction(instruction) for instruction in instructions]
     assert len(instructions) == 4
     assert instructions[0] == "You are a helpful assistant"
     assert instructions[1].__name__ == "add_the_date"
@@ -42,7 +43,7 @@ def test_build_pydantic_agent_success_no_tools():
     assert isinstance(agent, Agent)
     assert agent._system_prompts == ()
 
-    assert_base_instructions(agent_instructions(agent))
+    assert_base_instructions(agent._instructions)
 
     assert isinstance(agent.model, OpenAIChatModel)
     assert agent.model.model_name == "model-123"
@@ -59,7 +60,7 @@ def test_build_pydantic_agent_with_tools(settings):
     agent = ConversationAgent(model_hrid="default-model")
     assert isinstance(agent, Agent)
 
-    assert_base_instructions(agent_instructions(agent), date_str="Today is Friday 25/07/2025.")
+    assert_base_instructions(agent._instructions, date_str="Today is Friday 25/07/2025.")
 
     assert isinstance(agent.model, OpenAIChatModel)
     assert agent.model.model_name == "model-123"
@@ -78,10 +79,10 @@ def test_add_dynamic_system_prompt():
 
     assert len(agent._system_prompt_functions) == 0
 
-    assert_base_instructions(agent_instructions(agent), date_str="Today is Friday 25/07/2025.")
+    assert_base_instructions(agent._instructions, date_str="Today is Friday 25/07/2025.")
 
     agent = ConversationAgent(model_hrid="default-model", language="fr-fr")
-    assert agent_instructions(agent)[2]() == "Answer in french."
+    assert unwrap_instruction(agent._instructions[2])() == "Answer in french."
 
 
 def test_agent_is_web_search_configured():
@@ -131,7 +132,7 @@ def test_build_pydantic_agent_with_legacy_tools(settings, caplog, legacy_tool):
     assert "Ignoring legacy tool(s)" in caplog.text
     assert isinstance(agent, Agent)
 
-    assert_base_instructions(agent_instructions(agent), date_str="Today is Friday 25/07/2025.")
+    assert_base_instructions(agent._instructions, date_str="Today is Friday 25/07/2025.")
 
     assert isinstance(agent.model, OpenAIChatModel)
     assert agent.model.model_name == "model-123"

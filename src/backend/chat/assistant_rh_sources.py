@@ -150,8 +150,14 @@ class CapturedStream(httpx.AsyncByteStream):
 
     def __init__(self, stream, capture, sse):
         self.stream, self.capture, self.sse = stream, capture, sse
+        self._iterator = self._capture()
 
-    async def __aiter__(self):
+    def __aiter__(self):
+        # The SDK drains response.stream again during cleanup. Resume the same
+        # iterator so a replayable transport cannot submit terminal metadata twice.
+        return self._iterator
+
+    async def _capture(self):
         pending = bytearray()
         failed = False
         scanned = 0
