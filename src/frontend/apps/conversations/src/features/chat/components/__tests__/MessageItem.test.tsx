@@ -36,6 +36,10 @@ vi.mock('rehype-katex', () => ({ default: () => {} }));
 vi.mock('remark-gfm', () => ({ default: () => {} }));
 vi.mock('remark-math', () => ({ default: () => {} }));
 
+// lottie-web polls `document.readyState` on an interval once imported; if the
+// file ends first, the tick fires after jsdom teardown and fails the run.
+vi.mock('lottie-react', () => ({ Lottie: () => null }));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -81,6 +85,12 @@ vi.mock('../SourceItemList', () => ({
 
 vi.mock('../ToolInvocationItem', () => ({
   ToolInvocationItem: () => <div data-testid="tool-invocation-item" />,
+}));
+
+vi.mock('../TruncatedResponseMessage', () => ({
+  TruncatedResponseMessage: () => (
+    <div data-testid="truncated-response-message" />
+  ),
 }));
 
 describe('splitIntoBlocks', () => {
@@ -649,6 +659,44 @@ describe('MessageItem', () => {
       ).not.toBeInTheDocument();
     });
 
+    it('does not render copy button while the turn runs without us', async () => {
+      // After a reload mid-answer the client only polls, so its own status
+      // reads "ready" while the backend is still producing the answer.
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            status="ready"
+            isLastMessage={true}
+            isLastAssistantMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(
+        screen.queryByRole('button', { name: 'Copy' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('keeps the copy button on the previous answer while the turn runs without us', async () => {
+      // Reloaded before the model wrote anything: the question is the last
+      // message, and the last assistant message is the finished answer before it.
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            status="ready"
+            isLastMessage={false}
+            isLastAssistantMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+    });
+
     it('does not render the action bar before the answer has content', async () => {
       // v5 creates the assistant message as soon as the response starts, with
       // no parts yet. The bar used to render on that empty bubble, putting the
@@ -856,6 +904,72 @@ describe('MessageItem', () => {
 
       expect(
         screen.queryByTestId('message-energy-indicator'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('interrupted answers', () => {
+    it('flags an answer the backend stored as interrupted', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+          />,
+        );
+      });
+
+      expect(screen.getByTestId('interrupted-answer')).toBeInTheDocument();
+    });
+
+    it('does not flag the answer a turn running without us is still writing', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+            isLastMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(
+        screen.queryByTestId('interrupted-answer'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('keeps flagging an earlier answer while a turn runs without us', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+            isLastMessage={false}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(screen.getByTestId('interrupted-answer')).toBeInTheDocument();
+    });
+
+    it('leaves a completed answer unflagged', async () => {
+      await act(async () => {
+        renderWithProviders(<MessageItem {...defaultProps} />);
+      });
+
+      expect(
+        screen.queryByTestId('interrupted-answer'),
       ).not.toBeInTheDocument();
     });
   });
@@ -1156,5 +1270,72 @@ describe('MessageItem', () => {
         screen.queryByTestId('summarization-error'),
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('truncated response metadata', () => {
+  const baseProps = {
+    isLastMessage: true,
+    isLastAssistantMessage: true,
+    isFirstConversationMessage: false,
+    streamingMessageHeight: null,
+    status: 'ready' as const,
+    conversationId: 'conv-1',
+    isSourceOpen: null,
+    isMobile: false,
+    onCopyToClipboard: vi.fn(),
+    onOpenSources: vi.fn(),
+    getMetadata: vi.fn(),
+  };
+
+  const renderMessage = (
+    message: Parameters<typeof MessageItem>[0]['message'],
+  ) =>
+    render(
+      <CunninghamProvider>
+        <Suspense fallback={null}>
+          <ToastProvider>
+            <MessageItem message={message} {...baseProps} />
+          </ToastProvider>
+        </Suspense>
+      </CunninghamProvider>,
+    );
+
+  it('renders TruncatedResponseMessage when metadata has truncated:true', () => {
+    renderMessage({
+      id: 'msg-1',
+      role: 'assistant' as const,
+      metadata: { truncated: true },
+      parts: [],
+    });
+
+    expect(
+      screen.getByTestId('truncated-response-message'),
+    ).toBeInTheDocument();
+  });
+
+  it('does not render TruncatedResponseMessage when metadata is absent', () => {
+    renderMessage({
+      id: 'msg-1',
+      role: 'assistant' as const,
+      parts: [],
+    });
+
+    expect(
+      screen.queryByTestId('truncated-response-message'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not render TruncatedResponseMessage when metadata lacks truncated:true', () => {
+    renderMessage({
+      id: 'msg-1',
+      role: 'assistant' as const,
+      metadata: { co2_impact: 0.001 },
+      parts: [],
+    });
+
+    expect(
+      screen.queryByTestId('truncated-response-message'),
+    ).not.toBeInTheDocument();
   });
 });

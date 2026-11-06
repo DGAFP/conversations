@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 # pylint: disable=too-many-lines
 
 import os
+import stat
+import tempfile
 import tomllib
 from socket import gethostbyname, gethostname
 from urllib.parse import urlparse
@@ -23,7 +25,9 @@ import sentry_sdk
 from configurations import Configuration, pristinemethod, values
 from corsheaders.defaults import default_headers
 from cryptography.fernet import Fernet
+from csp.constants import NONE
 from langfuse import Langfuse
+from lasuite.configuration.values import SecretFileValue
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import ignore_logger
 
@@ -36,8 +40,9 @@ from chat.llm_configuration import cached_load_llm_configuration, load_llm_confi
 from conversations.assistant_rh_settings import AssistantRHSettings
 from conversations.brave_settings import BraveSettings
 from conversations.celery_settings import CelerySettings
-from conversations.observability_settings import ObservabilitySettings
+from conversations.observability_settings import ObservabilitySettings, scrub_transaction_queries
 from conversations.oidc_settings import OIDCSettings
+from conversations.prometheus_settings import PrometheusSettings
 from conversations.staan_settings import StaanSettings
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -57,12 +62,23 @@ def get_release():
         return "NA"  # Default: not available
 
 
+# The default database engine. Django loads it as an alias of `postgresql`.
+DEFAULT_DB_ENGINE = "django.db.backends.postgresql_psycopg2"
+
+# Database engines django-prometheus can wrap.
+PROMETHEUS_WRAPPABLE_DB_ENGINES = (
+    "django.db.backends.postgresql",
+    DEFAULT_DB_ENGINE,
+)
+
+
 class Base(
     AssistantRHSettings,
     BraveSettings,
     StaanSettings,
     CelerySettings,
     ObservabilitySettings,
+    PrometheusSettings,
     OIDCSettings,
     Configuration,
 ):
@@ -92,7 +108,10 @@ class Base(
 
     # Security
     ALLOWED_HOSTS = values.ListValue([])
-    SECRET_KEY = values.Value(None)
+    # Django's default, made explicit because setup_prometheus_metrics may add to it
+    # in place: Production redefines it with the probes
+    SECURE_REDIRECT_EXEMPT = []
+    SECRET_KEY = SecretFileValue(None)
     SERVER_TO_SERVER_API_TOKENS = values.ListValue([])
 
     # Application definition
@@ -103,13 +122,13 @@ class Base(
     DATABASES = {
         "default": {
             "ENGINE": values.Value(
-                "django.db.backends.postgresql_psycopg2",
+                DEFAULT_DB_ENGINE,
                 environ_name="DB_ENGINE",
                 environ_prefix=None,
             ),
             "NAME": values.Value("conversations", environ_name="DB_NAME", environ_prefix=None),
             "USER": values.Value("dinum", environ_name="DB_USER", environ_prefix=None),
-            "PASSWORD": values.Value("pass", environ_name="DB_PASSWORD", environ_prefix=None),
+            "PASSWORD": SecretFileValue("pass", environ_name="DB_PASSWORD", environ_prefix=None),
             "HOST": values.Value("localhost", environ_name="DB_HOST", environ_prefix=None),
             "PORT": values.Value(5432, environ_name="DB_PORT", environ_prefix=None),
         }
@@ -139,8 +158,8 @@ class Base(
 
     # Media
     AWS_S3_ENDPOINT_URL = values.Value(environ_name="AWS_S3_ENDPOINT_URL", environ_prefix=None)
-    AWS_S3_ACCESS_KEY_ID = values.Value(environ_name="AWS_S3_ACCESS_KEY_ID", environ_prefix=None)
-    AWS_S3_SECRET_ACCESS_KEY = values.Value(
+    AWS_S3_ACCESS_KEY_ID = SecretFileValue(environ_name="AWS_S3_ACCESS_KEY_ID", environ_prefix=None)
+    AWS_S3_SECRET_ACCESS_KEY = SecretFileValue(
         environ_name="AWS_S3_SECRET_ACCESS_KEY", environ_prefix=None
     )
     AWS_S3_REGION_NAME = values.Value(environ_name="AWS_S3_REGION_NAME", environ_prefix=None)
@@ -309,12 +328,54 @@ class Base(
         "posthog.integrations.django.PosthogContextMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
         "dockerflow.django.middleware.DockerflowMiddleware",
+        "csp.middleware.CSPMiddleware",
+        "axes.middleware.AxesMiddleware",
     ]
 
     AUTHENTICATION_BACKENDS = [
+        "axes.backends.AxesStandaloneBackend",
         "django.contrib.auth.backends.ModelBackend",
         "core.authentication.backends.OIDCAuthenticationBackend",
     ]
+
+    # Prefer Argon2id while retaining existing hashes for verification and upgrades.
+    PASSWORD_HASHERS = [
+        "django.contrib.auth.hashers.Argon2PasswordHasher",
+        "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+        "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+        "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+        "django.contrib.auth.hashers.ScryptPasswordHasher",
+    ]
+
+    AUTH_PASSWORD_VALIDATORS = [
+        {
+            "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+            "OPTIONS": {
+                "user_attributes": ("admin_email", "email", "full_name", "short_name"),
+            },
+        },
+        {
+            "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+            "OPTIONS": {"min_length": 12},
+        },
+        {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+        {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    ]
+
+    # Protect the admin password form against account and IP-based brute-force attacks.
+    AXES_ONLY_ADMIN_SITE = True
+    AXES_HANDLER = "core.authentication.axes.AdminAxesDatabaseHandler"
+    AXES_USERNAME_FORM_FIELD = "username"
+    AXES_LOCKOUT_PARAMETERS = ["username", "ip_address"]
+    AXES_FAILURE_LIMIT = values.PositiveIntegerValue(
+        5, environ_name="RATE_LIMIT_ADMIN_LOGIN_FAILURE_LIMIT", environ_prefix=None
+    )
+    # Axes interprets numeric cool-off values as hours (0.25 = 15 minutes).
+    AXES_COOLOFF_TIME = values.FloatValue(
+        0.25, environ_name="RATE_LIMIT_ADMIN_LOGIN_COOLOFF_HOURS", environ_prefix=None
+    )
+    AXES_RESET_ON_SUCCESS = True
+    AXES_RESET_COOL_OFF_ON_FAILURE_DURING_LOCKOUT = False
 
     # Django applications from the highest priority to the lowest
     INSTALLED_APPS = [
@@ -331,6 +392,8 @@ class Base(
         "dockerflow.django",
         "rest_framework",
         "solo.apps.SoloAppConfig",
+        "csp",
+        "axes",
         # Django
         "django.contrib.admin",
         "django.contrib.auth",
@@ -434,7 +497,7 @@ class Base(
     EMAIL_BRAND_NAME = values.Value(None)
     EMAIL_HOST = values.Value(None)
     EMAIL_HOST_USER = values.Value(None)
-    EMAIL_HOST_PASSWORD = values.Value(None)
+    EMAIL_HOST_PASSWORD = SecretFileValue(None)
     EMAIL_LOGO_IMG = values.Value(None)
     EMAIL_PORT = values.PositiveIntegerValue(None)
     EMAIL_USE_TLS = values.BooleanValue(False)
@@ -455,6 +518,37 @@ class Base(
         ],
         environ_name="CORS_ALLOW_HEADERS",
     ) + list(default_headers)
+
+    # Content Security Policy
+    # See https://content-security-policy.com/ for more information.
+    CONTENT_SECURITY_POLICY = {
+        "EXCLUDE_URL_PREFIXES": values.ListValue(
+            ["/admin"],
+            environ_name="CONTENT_SECURITY_POLICY_EXCLUDE_URL_PREFIXES",
+            environ_prefix=None,
+        ),
+        "DIRECTIVES": values.DictValue(
+            default={
+                "default-src": [NONE],
+                "script-src": [NONE],
+                "style-src": [NONE],
+                "img-src": [NONE],
+                "connect-src": [NONE],
+                "font-src": [NONE],
+                "object-src": [NONE],
+                "media-src": [NONE],
+                "frame-src": [NONE],
+                "child-src": [NONE],
+                "form-action": [NONE],
+                "frame-ancestors": [NONE],
+                "base-uri": [NONE],
+                "worker-src": [NONE],
+                "manifest-src": [NONE],
+            },
+            environ_name="CONTENT_SECURITY_POLICY_DIRECTIVES",
+            environ_prefix=None,
+        ),
+    }
 
     # Frontend
     FRONTEND_THEME = values.Value(None, environ_name="FRONTEND_THEME", environ_prefix=None)
@@ -517,7 +611,7 @@ class Base(
         default=60 * 60 * 12, environ_name="SESSION_COOKIE_AGE", environ_prefix=None
     )
 
-    BREVO_API_KEY = values.Value(
+    BREVO_API_KEY = SecretFileValue(
         default=None,
         environ_name="BREVO_API_KEY",
         environ_prefix=None,
@@ -569,6 +663,13 @@ class Base(
         environ_name="DEFAULT_ALLOW_CONVERSATION_ANALYTICS",
         environ_prefix=None,
     )
+    # Off by default: a provider that rejects the parameter outright would fail every
+    # request, so each deployment turns the cap on once its providers are known good.
+    LLM_MAX_OUTPUT_TOKENS_PER_MESSAGE = values.IntegerValue(
+        0,
+        environ_name="LLM_MAX_OUTPUT_TOKENS_PER_MESSAGE",
+        environ_prefix=None,
+    )
     DEFAULT_ALLOW_SMART_WEB_SEARCH = values.BooleanValue(
         default=False,
         environ_name="DEFAULT_ALLOW_SMART_WEB_SEARCH",
@@ -601,7 +702,7 @@ class Base(
 
     # These settings are default values used in the default LLM_CONFIGURATIONS
     # They allow a deployment with only one model without a specific configuration file
-    AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
+    AI_API_KEY = SecretFileValue(None, environ_name="AI_API_KEY", environ_prefix=None)
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
     AI_MODEL = values.Value(None, environ_name="AI_MODEL", environ_prefix=None)
     AI_AGENT_INSTRUCTIONS = values.Value(
@@ -803,7 +904,7 @@ class Base(
     )
 
     # Albert API
-    ALBERT_API_KEY = values.Value(
+    ALBERT_API_KEY = SecretFileValue(
         None,  # Albert API key is not set by default
         environ_name="ALBERT_API_KEY",
         environ_prefix=None,
@@ -871,6 +972,15 @@ class Base(
     # Prevents connection drops during long stream pauses while providing 5s safety margin.
     KEEPALIVE_INTERVAL = values.PositiveIntegerValue(
         default=55, environ_name="KEEPALIVE_INTERVAL", environ_prefix=None
+    )
+
+    # Longest a turn is supported to run, in seconds from its start. Only a turn
+    # whose reader has left is held to it: with the page gone, nothing else can
+    # cut short a turn stuck on a call that never returns. Past it, the turn is
+    # cancelled and filed as interrupted. Keep it well above the slowest
+    # legitimate turn: an OCR alone can take OCR_TIMEOUT times its retries.
+    MAX_TURN_DURATION = values.PositiveIntegerValue(
+        default=30 * 60, environ_name="MAX_TURN_DURATION", environ_prefix=None
     )
 
     # pylint: disable=invalid-name
@@ -992,6 +1102,74 @@ class Base(
             )
 
     @classmethod
+    def setup_prometheus_metrics(cls):
+        """Wire django-prometheus into the settings (PROMETHEUS_METRICS_ENABLED)."""
+        if not cls.PROMETHEUS_API_KEY:
+            # fail closed: without a key the endpoint would answer to anybody
+            raise ValueError("PROMETHEUS_METRICS_ENABLED requires PROMETHEUS_API_KEY to be set.")
+
+        # prometheus_client decides whether the workers share their numbers when it is
+        # first imported, by reading this variable from the environment: a setting alone
+        # would come too late.
+        multiproc_dir = cls.PROMETHEUS_MULTIPROC_DIR or os.path.join(
+            tempfile.gettempdir(), f"conversations-prometheus-{os.getuid()}"
+        )
+        try:
+            os.makedirs(multiproc_dir, mode=0o700, exist_ok=True)
+            stat_result = os.lstat(multiproc_dir)
+        except OSError as error:
+            raise ValueError(
+                f"PROMETHEUS_MULTIPROC_DIR ({multiproc_dir}) cannot be created: {error}"
+            ) from error
+        # A shared temporary directory is writable by every local user: refuse a
+        # directory somebody else prepared, or a link to somewhere else.
+        if not stat.S_ISDIR(stat_result.st_mode) or stat_result.st_uid != os.getuid():
+            raise ValueError(
+                f"PROMETHEUS_MULTIPROC_DIR ({multiproc_dir}) must be a directory "
+                "owned by the user running the application."
+            )
+        # An existing directory keeps its mode: refuse one others could write metric
+        # files to, which every worker maps in memory.
+        if stat.S_IMODE(stat_result.st_mode) & (stat.S_IWGRP | stat.S_IWOTH):
+            raise ValueError(
+                f"PROMETHEUS_MULTIPROC_DIR ({multiproc_dir}) must not be writable "
+                "by the group or by other users."
+            )
+        cls.PROMETHEUS_MULTIPROC_DIR = multiproc_dir
+        os.environ["PROMETHEUS_MULTIPROC_DIR"] = multiproc_dir
+
+        # Edited in place: post_setup runs once the settings have been handed to Django,
+        # which only sees a change made through the objects it already holds.
+        if "django_prometheus" not in cls.INSTALLED_APPS:
+            cls.INSTALLED_APPS.append("django_prometheus")
+        # The measuring middlewares go first and last, so that the time spent in every
+        # other middleware is measured. The authentication goes before them all: a
+        # refused scrape touches neither the session store nor the database.
+        auth = "core.middleware.PrometheusAuthMiddleware"
+        before = "django_prometheus.middleware.PrometheusBeforeMiddleware"
+        after = "django_prometheus.middleware.PrometheusAfterMiddleware"
+        if before not in cls.MIDDLEWARE:
+            cls.MIDDLEWARE.insert(0, before)
+            cls.MIDDLEWARE.insert(0, auth)
+            cls.MIDDLEWARE.append(after)
+
+        default_database = cls.DATABASES["default"]
+        if (
+            cls.PROMETHEUS_DB_METRICS_ENABLED
+            and default_database.get("ENGINE") in PROMETHEUS_WRAPPABLE_DB_ENGINES
+        ):
+            default_database["ENGINE"] = "django_prometheus.db.backends.postgresql"
+
+        # The path is core.middleware.METRICS_PATH, not imported here: the settings are
+        # read before the applications are.
+        metrics_pattern = "^metrics$"
+        if (
+            cls.PROMETHEUS_METRICS_SSL_REDIRECT_EXEMPT
+            and metrics_pattern not in cls.SECURE_REDIRECT_EXEMPT
+        ):
+            cls.SECURE_REDIRECT_EXEMPT.append(metrics_pattern)
+
+    @classmethod
     def post_setup(cls):
         """Post setup configuration.
         This is the place where you can configure settings that require other
@@ -1006,6 +1184,11 @@ class Base(
                 environment=cls.__name__.lower(),
                 release=get_release(),
                 integrations=[DjangoIntegration()],
+                # Request bodies and stack frame locals carry user prompts.
+                max_request_body_size="never",
+                include_local_variables=False,
+                traces_sample_rate=cls.SENTRY_TRACES_SAMPLE_RATE,
+                before_send_transaction=scrub_transaction_queries,
             )
             sentry_sdk.set_tag("application", "backend")
 
@@ -1077,6 +1260,9 @@ class Base(
                 debug=cls.LANGFUSE_DEBUG,
             )
 
+        if cls.PROMETHEUS_METRICS_ENABLED:
+            cls.setup_prometheus_metrics()
+
 
 class Build(Base):
     """Settings used when the application is built.
@@ -1129,6 +1315,17 @@ class Development(Base):
             ),
             "OPTIONS": {
                 "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                # Fail fast when Redis accepts connections but stops answering
+                "SOCKET_CONNECT_TIMEOUT": values.FloatValue(
+                    0.5,  # timeout in seconds
+                    environ_name="CACHES_SOCKET_CONNECT_TIMEOUT",
+                    environ_prefix=None,
+                ),
+                "SOCKET_TIMEOUT": values.FloatValue(
+                    1,  # timeout in seconds
+                    environ_name="CACHES_SOCKET_TIMEOUT",
+                    environ_prefix=None,
+                ),
             },
         },
     }
@@ -1136,6 +1333,10 @@ class Development(Base):
     def __init__(self):
         # pylint: disable=invalid-name
         self.INSTALLED_APPS += ["django_extensions", "drf_spectacular_sidecar"]
+        self.CONTENT_SECURITY_POLICY["EXCLUDE_URL_PREFIXES"] += [
+            f"/api/{self.API_VERSION}/swagger",
+            f"/api/{self.API_VERSION}/redoc",
+        ]
 
 
 class Test(Base):
@@ -1190,7 +1391,7 @@ class Test(Base):
     # the repo-root .env or the CI job env).
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.postgresql_psycopg2",
+            "ENGINE": DEFAULT_DB_ENGINE,
             "NAME": "conversations",
             "USER": "dinum",
             "PASSWORD": "pass",
@@ -1301,6 +1502,11 @@ class Test(Base):
                 "level": "INFO",
                 "propagate": False,
             },
+            # httpx (and httpx2, the OpenAI SDK transport) log every request url at
+            # INFO, query string included: web search queries would reach the logs.
+            # Set here rather than relying on langfuse doing it for httpx on import.
+            "httpx": {"level": "WARNING"},
+            "httpx2": {"level": "WARNING"},
         },
     }
 
@@ -1359,7 +1565,6 @@ class Production(Base):
         gethostbyname(gethostname()),
     ]
     CSRF_TRUSTED_ORIGINS = values.ListValue([])
-    SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
 
     # SECURE_PROXY_SSL_HEADER allows to fix the scheme in Django's HttpRequest
@@ -1373,10 +1578,21 @@ class Production(Base):
     # In other cases, you should comment the following line to avoid security issues.
     # SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    SECURE_HSTS_SECONDS = 60
-    SECURE_HSTS_PRELOAD = True
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    # One year, the minimum for the HSTS preload list. Including subdomains and
+    # preloading also bind the other hosts of the domain, so both are opt-in.
+    SECURE_HSTS_SECONDS = values.PositiveIntegerValue(
+        60 * 60 * 24 * 365, environ_name="SECURE_HSTS_SECONDS", environ_prefix=None
+    )
+    SECURE_HSTS_PRELOAD = values.BooleanValue(
+        False, environ_name="SECURE_HSTS_PRELOAD", environ_prefix=None
+    )
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = values.BooleanValue(
+        False, environ_name="SECURE_HSTS_INCLUDE_SUBDOMAINS", environ_prefix=None
+    )
     SECURE_SSL_REDIRECT = True
+    # The probes are called on the process itself, over plain http: a redirect to
+    # https is a probe that fails. /metrics joins them only with
+    # PROMETHEUS_METRICS_SSL_REDIRECT_EXEMPT, see setup_prometheus_metrics
     SECURE_REDIRECT_EXEMPT = [
         "^__lbheartbeat__",
         "^__heartbeat__",
@@ -1385,6 +1601,11 @@ class Production(Base):
     # Modern browsers require to have the `secure` attribute on cookies with `Samesite=none`
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
+
+    # Only accept an https `next` URL to redirect to after an OIDC login
+    OIDC_REDIRECT_REQUIRE_HTTPS = values.BooleanValue(
+        default=True, environ_name="OIDC_REDIRECT_REQUIRE_HTTPS", environ_prefix=None
+    )
 
     # Privacy
     SECURE_REFERRER_POLICY = "same-origin"
@@ -1404,6 +1625,17 @@ class Production(Base):
             ),
             "OPTIONS": {
                 "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                # Fail fast when Redis accepts connections but stops answering
+                "SOCKET_CONNECT_TIMEOUT": values.FloatValue(
+                    0.5,  # timeout in seconds
+                    environ_name="CACHES_SOCKET_CONNECT_TIMEOUT",
+                    environ_prefix=None,
+                ),
+                "SOCKET_TIMEOUT": values.FloatValue(
+                    1,  # timeout in seconds
+                    environ_name="CACHES_SOCKET_TIMEOUT",
+                    environ_prefix=None,
+                ),
             },
             "KEY_PREFIX": values.Value(
                 "conversations",

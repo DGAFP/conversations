@@ -1,6 +1,18 @@
 """Django configuration mixin for Sentry, Posthog, Langfuse and logging."""
 
 from configurations import values
+from lasuite.configuration.values import SecretFileValue
+
+
+def scrub_transaction_queries(event, hint):  # pylint: disable=unused-argument
+    """Drop query strings: integrations copy them whatever send_default_pii says."""
+    event.get("request", {}).pop("query_string", None)
+    for span in event.get("spans", []):
+        data = span.get("data")
+        if data:
+            data.pop("http.query", None)
+            data.pop("url.query", None)
+    return event
 
 
 class ObservabilitySettings:
@@ -8,6 +20,9 @@ class ObservabilitySettings:
 
     # Sentry
     SENTRY_DSN = values.Value(None, environ_name="SENTRY_DSN", environ_prefix=None)
+    SENTRY_TRACES_SAMPLE_RATE = values.FloatValue(
+        None, environ_name="SENTRY_TRACES_SAMPLE_RATE", environ_prefix=None
+    )
 
     # Posthog
     # Looks like "{'id': 'posthog_key', 'host': 'https://product.conversations.127.0.0.1.nip.io'}"
@@ -60,6 +75,11 @@ class ObservabilitySettings:
                 ),
                 "propagate": False,
             },
+            # httpx (and httpx2, the OpenAI SDK transport) log every request url at
+            # INFO, query string included: web search queries would reach the logs.
+            # Set here rather than relying on langfuse doing it for httpx on import.
+            "httpx": {"level": "WARNING"},
+            "httpx2": {"level": "WARNING"},
         },
     }
 
@@ -70,7 +90,7 @@ class ObservabilitySettings:
     LANGFUSE_PUBLIC_KEY = values.Value(
         None, environ_name="LANGFUSE_PUBLIC_KEY", environ_prefix=None
     )
-    LANGFUSE_SECRET_KEY = values.Value(
+    LANGFUSE_SECRET_KEY = SecretFileValue(
         None, environ_name="LANGFUSE_SECRET_KEY", environ_prefix=None
     )
     LANGFUSE_HOST = values.Value(None, environ_name="LANGFUSE_HOST", environ_prefix=None)

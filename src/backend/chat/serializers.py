@@ -4,6 +4,7 @@ from typing import Optional
 from urllib.parse import quote
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from django_pydantic_field.rest_framework import SchemaField  # pylint: disable=no-name-in-module
@@ -12,9 +13,10 @@ from rest_framework import serializers
 
 from core.assistant_rh import MODEL_PREFIX, configured_models, request_models
 from core.file_upload.enums import AttachmentStatus, FileUploadMode
+from core.file_upload.mime_types import resolve_markdown_content_type
 from core.file_upload.utils import generate_upload_policy
 
-from chat import models
+from chat import models, stream_chunks
 from chat.ai_sdk_types import UIMessage
 from chat.constants import IMAGE_MIME_PREFIX
 
@@ -166,6 +168,11 @@ class ChatConversationRequestSerializer(serializers.Serializer):
         default=False,
         help_text="Force web search.",
     )
+    force_datagouv = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Force the DataGouv connector.",
+    )
     model_hrid = serializers.CharField(
         required=False,
         default=None,
@@ -298,6 +305,8 @@ class CreateChatConversationAttachmentSerializer(serializers.ModelSerializer):
     policy = serializers.SerializerMethodField()
     uploaded_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
     key = serializers.CharField(read_only=True)  # Key is generated server-side
+    # Blank is let through here so `validate` can resolve a markdown file from its name.
+    content_type = serializers.CharField(max_length=100, allow_blank=True)
 
     class Meta:  # pylint: disable=missing-class-docstring
         model = models.ChatConversationAttachment
@@ -326,6 +335,17 @@ class CreateChatConversationAttachmentSerializer(serializers.ModelSerializer):
 
         return size
 
+    def validate(self, attrs):
+        """Derive a markdown file's type from its name, the browser may not know it."""
+        attrs = super().validate(attrs)
+        content_type = resolve_markdown_content_type(attrs["file_name"], attrs["content_type"])
+        if not content_type:
+            raise serializers.ValidationError(
+                {"content_type": ["This field may not be blank."]}, code="blank"
+            )
+        attrs["content_type"] = content_type
+        return attrs
+
 
 class ChatProjectNestedSerializer(serializers.ModelSerializer):
     """Lightweight read-only serializer for nested project info in search results."""
@@ -343,9 +363,63 @@ class ChatConversationRetrieveSerializer(ChatConversationSerializer):
     tests), but a single conversation retrieval nests it so the client can read
     project.id/title/icon - matching the search endpoint and the frontend
     contract (e.g. the project indexing banner needs the conversation's project).
+
+    It also reads the chunks of a turn that has not landed, which is why the
+    two fields below exist only here: a turn in flight, or one cut short, is
+    something you see when you open a conversation, not something the list
+    needs to know.
     """
 
     project = ChatProjectNestedSerializer(read_only=True)
+    messages = serializers.SerializerMethodField(
+        help_text=(
+            "The stored messages, followed by the turn a chunk trail describes when one has"
+            " not landed yet: an answer still being generated, or one an interruption cut"
+            " short. The trailing answer carries `metadata.interrupted`."
+        ),
+    )
+    is_streaming = serializers.SerializerMethodField(
+        help_text=(
+            "True while chunks are still arriving for this conversation. A client that left"
+            " mid-answer comes back to a trail that looks the same either way; this says"
+            " whether the answer is still coming, so the frontend can wait for it rather"
+            " than call it lost."
+        ),
+    )
+
+    class Meta(ChatConversationSerializer.Meta):  # pylint: disable=missing-class-docstring
+        fields = ChatConversationSerializer.Meta.fields + ["is_streaming"]
+        read_only_fields = ChatConversationSerializer.Meta.read_only_fields + ["is_streaming"]
+
+    @staticmethod
+    def _chunks(obj):
+        """Read messages and chunks under the same lock as a landing turn.
+
+        A conversation loaded before completion must not be paired with chunks
+        read after completion deleted them. Cache the snapshot for both fields.
+        """
+        if not hasattr(obj, "cached_stream_chunks"):
+            with transaction.atomic():
+                obj.refresh_from_db(
+                    from_queryset=models.ChatConversation.objects.select_for_update(),
+                    fields=["messages"],
+                )
+                obj.cached_stream_chunks = list(obj.stream_chunks.all())
+            stream_chunks.describe(obj, obj.cached_stream_chunks)
+        return obj.cached_stream_chunks
+
+    @extend_schema_field(SchemaField(schema=list[UIMessage]))
+    def get_messages(self, obj):
+        """Stored messages, plus the turn the chunks describe if one is pending."""
+        chunks = self._chunks(obj)
+        messages = list(obj.messages)
+        messages.extend(stream_chunks.interrupted_messages(chunks))
+        return [message.model_dump(mode="json") for message in messages]
+
+    @extend_schema_field(serializers.BooleanField)
+    def get_is_streaming(self, obj) -> bool:
+        """True while a turn keeps appending chunks for this conversation."""
+        return stream_chunks.is_live(self._chunks(obj))
 
 
 class ChatConversationSearchSerializer(serializers.ModelSerializer):
@@ -423,7 +497,7 @@ class ModelHealthResponseSerializer(serializers.Serializer):  # pylint: disable=
 class AssistantHealthBannerSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """Single health banner item."""
 
-    level = serializers.ChoiceField(choices=["warning", "alert"])
+    level = serializers.ChoiceField(choices=["info", "warning", "alert"])
     title = serializers.CharField()
     content = serializers.CharField()
 

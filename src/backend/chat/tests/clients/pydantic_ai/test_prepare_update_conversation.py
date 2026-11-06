@@ -35,6 +35,7 @@ def service_fixture(conversation):
     service = object.__new__(AIAgentService)
     service._rh_sources = None
     service.conversation = conversation
+    service._question_stored = False
     service.user = SimpleNamespace(pk=1)
     service.conversation_agent = SimpleNamespace(
         configuration=LLModel(

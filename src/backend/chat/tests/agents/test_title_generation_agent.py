@@ -5,7 +5,7 @@
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from chat.agents.conversation import TitleGenerationAgent
-from chat.tests.utils import agent_instructions
+from chat.tests.utils import unwrap_instruction
 
 
 def test_title_generation_agent_uses_default_model_hrid(settings):
@@ -44,11 +44,11 @@ def test_title_generation_agent_instructions():
     agent = TitleGenerationAgent()
 
     # The agent should have the title generation system prompt as instructions
-    instructions = agent_instructions(agent)
+    instructions = agent._instructions
     assert len(instructions) == 1
     expected = (
         "You are a title generator. Your task is to create concise, descriptive titles "
         "that accurately summarize conversation content and help the user quickly identify the "
         "conversation.\n\n"
     )
-    assert instructions[0] == expected
+    assert unwrap_instruction(instructions[0]) == expected

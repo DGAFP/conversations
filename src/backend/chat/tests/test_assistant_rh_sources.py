@@ -55,6 +55,9 @@ async def test_capture_json_and_sse_without_changing_wire_bytes(sse):
     assert info["sources"][0]["url"].endswith("/messages/message-1/sources/0/")
     assert info["sources"][1]["url"] == "https://www.service-public.fr/a"
     assert COMPLETION not in json.dumps(info) and "private-doc" not in json.dumps(info)
+    # OpenAI drains the raw stream again after reading the SSE terminator.
+    assert [part async for part in tee] == []
+    assert capture.valid and capture.completion_id == COMPLETION
     await tee.aclose()
     assert stream.closed
 

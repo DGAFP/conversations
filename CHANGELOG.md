@@ -10,6 +10,26 @@ and this project adheres to
 
 - ✨(chat) add per-answer RH star ratings and detailed feedback.
 
+- Integrate upstream v0.0.28 while preserving RH authentication and sources.
+- Keep RH login forms usable under the new nonce-based security policy.
+- Preserve admin lockout protection in password-only RH deployments.
+- Join upstream NUL-safe JSON fields with the applied RH migration history.
+
+- Integrate upstream v0.0.27 while retaining the RH security dependencies.
+
+- Keep completed answers visible when retrieval overlaps stream finalization.
+- Keep active turns alive while reasoning or summary frames are emitted.
+
+- Preserve Assistant RH sources, ProConnect, corpus grants and branding when
+  integrating upstream v0.0.26 into staging.
+- Keep RH source capture stable when the OpenAI SDK drains a stream twice.
+- Handle PyJWT token errors as authentication refusals for ProConnect.
+- Isolate async stream-metrics tests from subsequent database tests.
+- Open conflicted upstream sync PRs for manual resolution instead of failing.
+- Add scheduled pull requests for individual upstream releases.
+- Upgrade vulnerable dependencies and repair the repository CI checks.
+- 👷(ci) prepare guarded staging delivery to Scaleway Kapsule
+
 - ✨(frontend) show the ministry acronym beside the model picker logo,
   including read-only conversations and single-corpus access.
 
@@ -43,32 +63,114 @@ and this project adheres to
 - Report revoked delegation as a rights error, throttle local login per
   account and sign out sessions without an audit nonce.
 
-## [Unreleased]
+## [0.0.28] - 2026-11-03
+
 ### Added
 
-- 👷(ci) prepare guarded staging delivery to Scaleway Kapsule
+- ✨(back) add opt-in output token limit per message
+- 🔒️(back) lock out repeated failed admin logins
+- 🔒️(back) require strong admin passwords and hash them with Argon2
+- 🔒️(back) add a Content-Security-Policy to backend responses
+- ✨(back) read secrets from files
 
+### Changed
+
+- 🔒️(back) raise HSTS to one year, make subdomains and preload opt-in
+- 🔒️(back) require https for OIDC redirects in production
+
+### Changed
+
+- 🔒️(back) upgrade authlib, dnspython and pypdf to fix CVEs
+- ⬆️(back,front) upgrade minor and patch dependencies
+
+### Fixed
+
+- 🐛(back) keep parsed conversation documents out of the Celery result backend
+- 🐛(back) accept list content in non-streaming Albert responses
+- 🐛(back) stop losing chat turns when a document contains NUL characters
+- 🐛(ci) key the Playwright browser cache on the Ubuntu release
+- 🔇(back) log tool retries as warnings, keep the cause on exhaustion
+- 🐛(back) skip filing a turn whose conversation was deleted
+- 🐛(oidc) log in the active user when several users share an email
+- 🐛(frontend) keep chat working in older browsers
+
+## [0.0.27] - 2026-10-28
+
+### Changed
+
+- 🔒️(front) upgrade undici and zod to fix CVE-2026-109869 and CVE-2023-54404
+- 🔒️(back) upgrade pypdf to 6.21.2 to fix DoS CVEs
+- 💬(front) reword the message shown while project files are processed
+
+### Fixed
+
+- 🐛(back) add socket timeouts to the Redis cache and Celery clients
+
+## [0.0.26] - 2026-10-22
+
+- ✨(back) add opt-in prometheus metrics on `/metrics`
+- ✨(back) measure model requests, chat streams and outgoing calls
+- ✨(helm) add a ServiceMonitor and a PodMonitor for the backend metrics
+- 📝(project) add pull request and AI usage policy
+- ✨(back) make the Sentry backend traces sample rate configurable
+- ✨(helm) serve a custom robots.txt from the frontend
+
+### Changed
+
+- 🔒️(front) upgrade dompurify to 3.4.17 to fix security issues
+- 🔒️(back) upgrade djangorestframework to 3.18.3 to fix security issues
+- 🔒️(back) upgrade brotli to fix CVE-2026-111497
+- 🔒️(back) upgrade certifi and pillow to fix CVEs
+- 🔧(docker) replace maildev with mailcatcher like other La Suite projects
+- ⬆️(dependencies) upgrade back-end and front-end dependencies
+- ⬆️(back) upgrade pydantic-ai to 2.52.0 and switch to httpx2
+- 💄(back) change high traffic wording and lower alert level
+
+### Fixed
+
+- 🐛(back) keep the original file of a document attached to a conversation
+- 💄(front) add margin-top for the carbon impact module.
+- ⚡️(front) disable posthog-js periodic feature flag reloads
+- 🐛(front) avoid stale pages and blank screens after a deploy
+- 🐛(front) ask to reload when a new version has been deployed
+- 🐛(ci) remove the shell default suffix from the DOCKER_USER build argument
+
+### Security
+
+- 🔒️(project) keep user prompts out of logs and telemetry
+- 🔒️(docker) bind dev compose ports to localhost only
+
+## [0.0.25] - 2026-10-01
+
+### Added
+
+- ✨(back) run model-health poll and de-index as celery beat tasks
 - ✨(back) add the data.gouv connector for a beta cohort
 - ✨(back) add Staan web search tool
+- ✨(front) let users activate or force the DataGouv connector
 
 ### Changed
 
 - ✨(front) replace input actions with a + dropdown menu
 - 🔧(project) replace MinIO with RustFS for local development and CI
 - ⬆️(dependencies) update front and mail dependencies and remove unused ones
+- ⬆️(dependencies) upgrade pyjwt to 2.14.0
+- ⬆️(dependencies) upgrade urllib3 to 2.8.0
+- ⚡️(front) read the cached config once per page load i/o on every render
+
+### Removed
+
+- 🔥(helm) remove the model-health and de-index CronJobs
 
 ### Fixed
 
-- 🐛(back) preserve permission-denied events after the OpenAI SDK update
-- 🐛(tests) support HTTPX2 mocks and preserve asyncio clocks during frozen-time
-  streaming tests after the Pydantic AI security update
-
-- 🔒️(dependencies) update packages flagged by the staging security scan
-
+- 🐛(back) keep a turn that is interrupted by appending it as it is produced
+- 🚸(front) wait for an answer still generating after leaving the conversation
 - ✅(back) make the project list query counts independent of test order
 - 👷(ci) pull the MinIO images from quay.io instead of Docker Hub
 - 🐛(ci) fix the CHANGELOG check failing when a pull request is opened
 - 🐛(back) replace whitenoise with servestatic for async-capable serving
+- 🐛(attachments) accept markdown uploads with a missing or generic mime type
 
 ## [0.0.24] - 2026-09-08
 
@@ -535,7 +637,15 @@ and this project adheres to
 - 💄(chat) add code highlighting for LLM responses #67
 - 🔧(evals) add run_evals management command
 
-[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.24...main
+[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.28...main
+
+[0.0.28]: https://github.com/suitenumerique/conversations/compare/v0.0.27...v0.0.28
+
+[0.0.27]: https://github.com/suitenumerique/conversations/compare/v0.0.26...v0.0.27
+
+[0.0.26]: https://github.com/suitenumerique/conversations/compare/v0.0.25...v0.0.26
+
+[0.0.25]: https://github.com/suitenumerique/conversations/compare/v0.0.24...v0.0.25
 
 [0.0.24]: https://github.com/suitenumerique/conversations/compare/v0.0.23...v0.0.24
 

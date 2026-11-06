@@ -1,5 +1,6 @@
 """Models for chat conversations."""
 
+import uuid
 from datetime import timedelta
 from typing import Sequence
 
@@ -7,14 +8,13 @@ from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
 
-from django_pydantic_field import SchemaField
-
 from core.file_upload.enums import AttachmentStatus
 from core.models import BaseModel
 
 from chat.ai_sdk_types import UIMessage
 from chat.constants import HISTORY_SUMMARY_CLAIM_TTL_SECONDS
 from chat.enums import AttachmentIndexState, CollectionIndexState
+from chat.fields import NulSafeJSONField, NulSafeSchemaField
 
 User = get_user_model()
 
@@ -130,12 +130,12 @@ class ChatConversation(BaseModel):
         help_text="Timestamp when the user manually set the title. If set, prevent automatic "
         "title generation.",
     )
-    ui_messages = models.JSONField(
+    ui_messages = NulSafeJSONField(
         default=list,
         blank=True,
         help_text="UI messages for the chat conversation, sent by frontend, not used",
     )
-    pydantic_messages = models.JSONField(
+    pydantic_messages = NulSafeJSONField(
         default=list,
         blank=True,
         help_text="Pydantic messages for the chat conversation, used for history",
@@ -149,7 +149,7 @@ class ChatConversation(BaseModel):
         default=0,
         help_text="Number of pydantic history messages already compacted into history_summary",
     )
-    messages: Sequence[UIMessage] = SchemaField(
+    messages: Sequence[UIMessage] = NulSafeSchemaField(
         schema=list[UIMessage],
         default=list,
         blank=True,
@@ -294,6 +294,97 @@ class AssistantRHMessageRun(BaseModel):
                 fields=["conversation", "message_id"], name="rh_message_run_unique"
             ),
         ]
+
+
+class ChatStreamChunk(BaseModel):
+    """A piece of an answer, written while it is being generated.
+
+    A turn only reaches `ChatConversation.messages` when it ends, and it can
+    fail to end: the client goes away, the generator is closed where it stands,
+    and nothing gets the chance to write. So the turn appends what it produces
+    as it produces it, here, where losing the request cannot take it back.
+
+    Rows are transient by design. A turn that ends folds its chunks into the
+    message it was building and deletes them in the same transaction; a turn
+    that never ends leaves them, and they are what the conversation shows in
+    place of the answer until the next turn folds them for real.
+
+    Two kinds of row, told apart by `parts`:
+
+    - text: another `text` delta, which is almost all of them.
+    - structure: a `parts` snapshot of the response so far, written when a tool
+      call or its result lands. Rare, and the only way an interrupted turn can
+      show what it was doing rather than only what it had said.
+    """
+
+    conversation = models.ForeignKey(
+        ChatConversation,
+        related_name="stream_chunks",
+        on_delete=models.CASCADE,
+        help_text="Conversation whose current turn produced this chunk",
+    )
+    run_id = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        help_text=(
+            "The turn that wrote this chunk. Everything is scoped to it rather than to the "
+            "conversation, so two turns running at once - two tabs on the same conversation - "
+            "cannot fold, overwrite or delete each other's trail."
+        ),
+    )
+    message_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=(
+            "Id of the assistant message being streamed, as announced to the client in the "
+            "`start` frame, so the folded message is the one the client is already holding. "
+            "Blank on the chunk holding the question, which is written before there is an "
+            "answer for the id to belong to."
+        ),
+    )
+    seq = models.PositiveIntegerField(
+        help_text="Position of this chunk in the turn, starting at 0",
+    )
+    question_in_messages = models.BooleanField(
+        default=False,
+        help_text=(
+            "True when this turn's question was written to `messages` before the turn began, "
+            "which the image-skip path does so the `skipped` markers survive. The snapshot "
+            "still carries the request, because the model history needs it, but a reader must "
+            "not show the question twice."
+        ),
+    )
+    text = models.TextField(
+        blank=True,
+        default="",
+        help_text="Text produced since the previous chunk",
+    )
+    parts = NulSafeJSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Snapshot of the turn's messages at this point, written instead of `text` when the "
+            "turn's structure changes (a tool call, a tool result). Null on a text chunk."
+        ),
+    )
+
+    class Meta:
+        db_table = "chat_stream_chunk"
+        verbose_name = "chat stream chunk"
+        verbose_name_plural = "chat stream chunks"
+        ordering = ["seq"]
+        indexes = [
+            models.Index(fields=["conversation", "run_id", "seq"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conversation", "run_id", "seq"], name="unique_stream_chunk_seq"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.conversation_id} run {self.run_id} #{self.seq}"
 
 
 class ChatConversationAttachment(BaseModel):

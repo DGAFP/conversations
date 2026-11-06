@@ -75,6 +75,14 @@ export function PostHogProvider({
       },
       capture_pageview: false,
       capture_pageleave: true,
+      // Messages and conversation titles are user prompts: autocapture must
+      // not read element text or attributes, and recordings would show them.
+      mask_all_text: true,
+      mask_all_element_attributes: true,
+      disable_session_recording: true,
+      // posthog-js >= 1.356.0 reloads flags every 5 minutes on visible tabs;
+      // only load them on init and identify to limit `/flags` requests.
+      remote_config_refresh_interval_ms: 0,
     });
   }, [conf?.host, conf?.id]);
 

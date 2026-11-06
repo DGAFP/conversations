@@ -110,6 +110,8 @@ describe('ModelSelector', () => {
         <InputChatActions
           fileUploadEnabled={false}
           webSearchEnabled={false}
+          datagouvEnabled={false}
+          forceDatagouv={false}
           isUploadingFiles={false}
           isMobile={false}
           forceWebSearch={false}

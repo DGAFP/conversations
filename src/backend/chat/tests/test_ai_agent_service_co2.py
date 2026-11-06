@@ -44,6 +44,10 @@ def service_fixture(conversation):
     s.conversation = conversation
     s._rh_sources = None
     s.user = SimpleNamespace(pk=1)
+    s._tokens_recorded = 0
+    s._question_stored = False
+    s._turn_started_at = 0.0
+    s._text_rows = s._snapshot_rows = 0
     s.conversation_agent = SimpleNamespace(
         configuration=LLModel(
             hrid="m",
@@ -54,6 +58,7 @@ def service_fixture(conversation):
             tools=[],
         )
     )
+    s._last_finish_reason = None
     return s
 
 
@@ -111,7 +116,7 @@ def test_no_co2_metadata_when_zero(conversation, service, final_output):
         ),
     ],
 )
-def test_usage_accumulates_across_runs(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913
+def test_usage_accumulates_across_runs(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913, PLR0917
     conversation,
     service,
     final_output,
@@ -152,8 +157,9 @@ async def test_finalize_emits_finish_message_with_co2(service, co2_impact):
 
     with (
         patch.object(service, "_agent_stop_streaming", new=AsyncMock()),
-        patch.object(service, "_prepare_update_conversation"),
-        patch.object(service, "_save_completed_conversation"),
+        # The write path is the unit under test elsewhere; here only the
+        # events finalize emits are.
+        patch.object(service, "_write_finished_turn"),
         patch("chat.clients.pydantic_ai.sync_to_async", side_effect=_fake_sync_to_async),
         patch("chat.clients.pydantic_ai.record_and_compute_cooldown", return_value=0),
     ):
