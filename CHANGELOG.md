@@ -8,6 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- ✨(chat) add per-answer RH star ratings and detailed feedback.
+
 - ✨(frontend) show the ministry acronym beside the model picker logo,
   including read-only conversations and single-corpus access.
 
