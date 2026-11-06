@@ -86,14 +86,14 @@ import os
 import time
 import uuid
 from contextlib import AsyncExitStack, ExitStack, suppress
-from io import BytesIO
 from typing import AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils.module_loading import import_string
 from django.utils.translation import gettext_lazy as _
 
@@ -102,10 +102,11 @@ from celery.exceptions import TimeoutError as CeleryTimeoutError
 from langfuse import get_client, propagate_attributes
 from pydantic_ai import Agent, InstrumentationSettings, RunContext, RunUsage
 from pydantic_ai.capabilities import Hooks, Instrumentation, ProcessHistory
-from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     BinaryContent,
     DocumentUrl,
+    FinishReason,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     ImageUrl,
@@ -127,6 +128,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import Model, infer_model_profile
+from pydantic_ai.settings import ModelSettings
 from rest_framework.exceptions import PermissionDenied
 
 from core import instrumentation
@@ -134,6 +136,7 @@ from core.analytics import acapture_event
 from core.feature_flags.helpers import is_feature_enabled
 
 from chat import models
+from chat.agents.base import get_max_output_tokens
 from chat.agents.conversation import ConversationAgent, TitleGenerationAgent
 from chat.agents.history_processors import (
     SUMMARY_SYSTEM_PREFIX,
@@ -198,7 +201,7 @@ from chat.mcp_servers import DataGouvConnector, enter_mcp_toolsets
 from chat.rate_limiting import get_cooldown_remaining, record_and_compute_cooldown
 from chat.stream_chunks import close as close_turn_trail
 from chat.stream_chunks import persist as persist_leftover_chunks
-from chat.tasks import parse_and_store_conversation_document_task, summarize_conversation_history
+from chat.tasks import index_conversation_document_task, summarize_conversation_history
 from chat.tools.descriptions import (
     DOCUMENT_SUMMARIZE_PROJECT_TOOL_DESCRIPTION,
     DOCUMENT_SUMMARIZE_SYSTEM_PROMPT,
@@ -330,8 +333,50 @@ def _extract_co2_from_usage(usage: RunUsage) -> float:
     return 0
 
 
+# The finish_reason pydantic-ai reports when generation was cut off by the output
+# token limit (one of the pydantic_ai.messages.FinishReason literal values).
+LENGTH_FINISH_REASON: FinishReason = "length"
+
+# Stands in for the answer a turn cut off at the output token limit never wrote, so
+# the question it was asked is not replayed as a second user message in a row.
+TRUNCATED_TURN_FILLER = "[cut off: output token limit reached]"
+
+
+def _truncation_annotation() -> dict[str, bool]:
+    """The flag marking a response cut off at the output token limit.
+
+    Streamed as a v4 message annotation, which the v4->v5 encoder folds into the
+    `finish` message metadata, and persisted directly in the message metadata.
+    One source of truth so the two never drift.
+    """
+    return {"truncated": True}
+
+
+def _keep_truncated_text(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """Strip the response cut off at the token limit down to the text it wrote.
+
+    Its tool calls never ran (one has incomplete arguments) and a thinking-only
+    response carries nothing to show. Sending either back in the next turn's
+    history would leave a tool call without its return, or an empty assistant
+    message, both of which providers reject. Dropped entirely when no text is left.
+    Pydantic AI may leave an empty request after it, from the retry it gave up on.
+    """
+    while messages and isinstance(messages[-1], ModelRequest) and not messages[-1].parts:
+        messages = messages[:-1]
+    *_earlier, _truncated = messages
+    if not isinstance(_truncated, ModelResponse):
+        return messages
+    _text_parts = [part for part in _truncated.parts if isinstance(part, TextPart) and part.content]
+    if not _text_parts:
+        return _earlier
+    return [*_earlier, dataclasses.replace(_truncated, parts=_text_parts)]
+
+
 class AIAgentService:  # pylint: disable=too-many-instance-attributes
     """Service class for AI-related operations (Pydantic-AI edition)."""
+
+    # Finish reason of the last model response, recorded by the truncation hook.
+    _last_finish_reason: FinishReason | None = None
 
     def __init__(  # noqa: PLR0915  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-statements
         self,
@@ -433,7 +478,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         self.conversation_agent = ConversationAgent(
             model_hrid=self.model_hrid,
             language=self.language,
-            capabilities=_capabilities,
+            capabilities=_capabilities + [self._build_truncation_hooks()],
             deps_type=ContextDeps,
             delegation_context=(
                 (
@@ -634,9 +679,29 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         path shields this, and a shield covers one awaitable, so the flush and
         the fold have to be inside the same one to be ordered at all once the
         task around them is being torn down.
+
+        Skipped when the conversation was deleted while the turn ran: there is
+        nothing left to file into, and writing a chunk for it would fail. The
+        check runs again when the write fails, since the delete can land
+        between the first check and the write: the chunk's own validation then
+        rejects the gone conversation, the insert does if the delete lands
+        later still, and the filing's locked re-read finds no row if it lands
+        after the flush. Any of these is raised while the conversation exists.
         """
-        await self._flush_text()
-        await sync_to_async(close_turn_trail)(self.conversation, self._turn_run_id)
+        if not await self._conversation_exists():
+            self._turn_log("conversation deleted, nothing to file")
+            return
+        try:
+            await self._flush_text()
+            await sync_to_async(close_turn_trail)(self.conversation, self._turn_run_id)
+        except ValidationError, IntegrityError, models.ChatConversation.DoesNotExist:
+            if await self._conversation_exists():
+                raise
+            self._turn_log("conversation deleted while filing, nothing to file")
+
+    async def _conversation_exists(self) -> bool:
+        """Whether the conversation is still in the database."""
+        return await models.ChatConversation.objects.filter(pk=self.conversation.pk).aexists()
 
     async def _flush_text(self) -> None:
         """Write the text in hand, if any."""
@@ -1048,6 +1113,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         It can be used to release resources or perform any necessary cleanup.
         """
         self._last_stop_check = 0
+        self._last_finish_reason = None
         self._pre_stream_events = []
         self._chunk_seq = itertools.count()
         self._pending_text = ""
@@ -1065,6 +1131,27 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         self._question_stored = False
         self._tool_step_pending = False
         await cache.adelete(self._stop_cache_key)
+
+    def _build_truncation_hooks(self) -> Hooks:
+        """Record each model response's finish reason, so `_is_truncated` can read it."""
+        _hooks = Hooks()
+
+        @_hooks.on.after_model_request
+        async def _detect_truncation(_ctx, *, request_context, response):  # pylint: disable=unused-argument
+            self._last_finish_reason = response.finish_reason
+            return response
+
+        return _hooks
+
+    @property
+    def _is_truncated(self) -> bool:
+        """True when the last model response stopped at the output token limit.
+
+        The last round decides: in a tool loop, a round cut off at the limit whose
+        tool call still parsed lets the run continue, and the answer the user reads
+        is the final round's.
+        """
+        return self._last_finish_reason == LENGTH_FINISH_REASON
 
     # --------------------------------------------------------------------- #
     # Core agent runner
@@ -1556,12 +1643,13 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
              - Enqueues the parse + RAG store on a Celery worker (reading the
                file from storage by key) and blocks on the result
              - Persists the backend document id on the attachment row
-             - Creates a markdown attachment for non-text files (PDF → MD)
+             - Records the markdown companion the task wrote for non-text
+               files (PDF → MD) as an attachment row
 
         Security: Documents are validated to ensure their URLs match the pattern
          `/media-key/{conversation_pk}/...` to prevent cross-conversation access.
 
-        The parse + store runs in the `parse_and_store_conversation_document_task`
+        The parse + store runs in the `index_conversation_document_task`
         Celery task rather than in-process, so the heavy, hostile-input-exposed
         work is off the request process and capped by the Celery task time limits.
         The turn blocks on the task result, so the UX is unchanged.
@@ -1623,7 +1711,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
             # thread like the `.get()`/`.forget()` below to keep the event
             # loop free for other streams.
             async_result = await asyncio.to_thread(
-                parse_and_store_conversation_document_task.delay,
+                index_conversation_document_task.delay,
                 self.conversation.collection_id,
                 key,
                 document.identifier,
@@ -1631,7 +1719,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                 self.user.sub,
             )
             try:
-                parsed_content, rag_document_id = await asyncio.to_thread(
+                companion_key, rag_document_id = await asyncio.to_thread(
                     async_result.get,
                     timeout=settings.DOCUMENT_PARSE_RESULT_TIMEOUT_SECONDS,
                 )
@@ -1643,11 +1731,11 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                 await asyncio.to_thread(async_result.revoke)
                 raise
             finally:
-                # Drop the (possibly large) parsed-content payload from the result
-                # backend once the task has finished: it has been consumed on
-                # success, and is useless on failure. If the task is still queued
-                # or running (timeout path above), a result written later sits in
-                # Redis until CELERY_RESULT_EXPIRES.
+                # Drop the task result from the result backend once the task has
+                # finished: it has been consumed on success, and is useless on
+                # failure. If the task is still queued or running (timeout path
+                # above), a result written later sits in Redis until
+                # CELERY_RESULT_EXPIRES.
                 await asyncio.to_thread(async_result.forget)
 
             # Persist the backend-side document id on the original attachment row.
@@ -1657,18 +1745,18 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                     conversation_id=self.conversation.pk, key=key
                 ).aupdate(rag_document_id=rag_document_id, is_indexed=True)
 
-            if not document.media_type.startswith(TEXT_MIME_PREFIX):
-                md_attachment = await models.ChatConversationAttachment.objects.acreate(
+            if companion_key:
+                # The task wrote the Markdown companion (non-text inputs only) to
+                # a distinct key, so the original file stays intact; record it.
+                await models.ChatConversationAttachment.objects.acreate(
                     conversation=self.conversation,
                     uploaded_by=self.user,
-                    key=key,
+                    key=companion_key,
                     file_name=f"{document.identifier}.md",
                     content_type=MARKDOWN_MIME_TYPE,
                     conversion_from=key,
+                    upload_state=models.AttachmentStatus.READY,
                 )
-                default_storage.save(md_attachment.key, BytesIO(parsed_content.encode("utf8")))
-                md_attachment.upload_state = models.AttachmentStatus.READY
-                await md_attachment.asave(update_fields=["upload_state", "updated_at"])
 
         if any_indexed:
             self.conversation.index_state = CollectionIndexState.INDEXED
@@ -2001,7 +2089,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                 yield events_v4.ToolCallPart(
                     tool_call_id=part.tool_call_id,
                     tool_name=part.tool_name,
-                    args=json.loads(part.args) if part.args else {},
+                    args=part.args_as_dict(),
                 )
             elif isinstance(part, ThinkingPart):
                 yield events_v4.ReasoningPart(reasoning=part.content)
@@ -2070,7 +2158,7 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                         yield events_v4.ToolCallPart(
                             tool_call_id=event.tool_call_id,
                             tool_name=event.part.tool_name,
-                            args=json.loads(event.part.args) if event.part.args else {},
+                            args=event.part.args_as_dict(),
                         )
                 elif isinstance(event, FunctionToolResultEvent):
                     # An outage reaches the model as a failed ToolReturnPart.
@@ -2256,9 +2344,15 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
         # the usage in the finish frame below is streamed but never persisted.
         if message_co2_impact:
             yield events_v4.MessageAnnotationPart(annotations=[{"co2_impact": message_co2_impact}])
+
+        if self._is_truncated:
+            yield events_v4.MessageAnnotationPart(annotations=[_truncation_annotation()])
+
         # Vercel finish message
         yield events_v4.FinishMessagePart(
-            finish_reason=events_v4.FinishReason.STOP,
+            finish_reason=(
+                events_v4.FinishReason.LENGTH if self._is_truncated else events_v4.FinishReason.STOP
+            ),
             usage=events_v4.Usage(
                 prompt_tokens=usage["promptTokens"],
                 completion_tokens=usage["completionTokens"],
@@ -2331,11 +2425,23 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
             self._setup_rag_tools(document_context_instruction=document_context_instruction)
 
     @staticmethod
-    def _append_filler_after_tool_return(history: list[ModelMessage]) -> None:
-        """Help Mistral to prevent `Unexpected role 'user' after role 'tool'` error."""
-        if history and history[-1].kind == "request":
-            if history[-1].parts and history[-1].parts[-1].part_kind == "tool-return":
-                history.append(ModelResponse(parts=[TextPart(content="ok")], kind="response"))
+    def _append_filler_after_dangling_request(history: list[ModelMessage]) -> None:
+        """Keep replayed history alternating: Mistral rejects the same role twice.
+
+        A stored turn can end on a request with no response after it, and the next
+        turn's prompt would then follow it as a second message in the same role:
+        a tool return (`Unexpected role 'user' after role 'tool'`), or a question
+        a turn cut off at the output token limit never got to answer.
+        """
+        if not (history and history[-1].kind == "request" and history[-1].parts):
+            return
+        _last_part_kind = history[-1].parts[-1].part_kind
+        if _last_part_kind == "tool-return":
+            history.append(ModelResponse(parts=[TextPart(content="ok")], kind="response"))
+        elif _last_part_kind == "user-prompt":
+            history.append(
+                ModelResponse(parts=[TextPart(content=TRUNCATED_TURN_FILLER)], kind="response")
+            )
 
     async def _snapshot_closed_tool_step(self, run) -> None:
         """Snapshot the tool cycle that just closed, if one is waiting for it."""
@@ -2448,8 +2554,10 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
             async for event in self._settle_datagouv(connected=bool(mcp_toolsets)):
                 yield event
 
-            self._append_filler_after_tool_return(history)
+            self._append_filler_after_dangling_request(history)
             message_history = history if history else None
+            _max_tokens = get_max_output_tokens(self.conversation_agent.configuration)
+            model_settings = ModelSettings(max_tokens=_max_tokens) if _max_tokens else None
 
             async def snapshot_closed_tool_step(_ctx, request_context):
                 """Snapshot the tool cycle once its returns are in the run.
@@ -2468,14 +2576,29 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
                 deps=self._context_deps,
                 toolsets=mcp_toolsets,
                 capabilities=[Hooks(before_model_request=snapshot_closed_tool_step)],
+                model_settings=model_settings,
             ) as run:
                 state = StreamingState()
-                async for event in self._process_agent_nodes(run, state):
-                    yield event
-
-                # Extract values from run before exiting the context manager
-                new_messages = run.result.new_messages()
-                run_output = run.result.output
+                try:
+                    async for event in self._process_agent_nodes(run, state):
+                        yield event
+                except UnexpectedModelBehavior:
+                    # Pydantic AI raises when the token limit cuts a response before
+                    # any text or mid-tool-call. Store what was written and show the
+                    # truncation notice rather than an error.
+                    if not self._is_truncated:
+                        raise
+                    self._turn_log("token limit reached before a usable response")
+                    # The run never reached its End node, so carry the streamed
+                    # message id over by hand: the stored message must keep the
+                    # id the client already has.
+                    self._handle_end_node(state)
+                    new_messages = _keep_truncated_text(run.new_messages())
+                    run_output = None
+                else:
+                    # Extract values from run before exiting the context manager
+                    new_messages = run.result.new_messages()
+                    run_output = run.result.output
                 final_usage = run.usage
                 usage["promptTokens"] = final_usage.input_tokens
                 usage["completionTokens"] = final_usage.output_tokens
@@ -2569,6 +2692,12 @@ class AIAgentService:  # pylint: disable=too-many-instance-attributes
             _output_ui_message.metadata = {
                 **(_output_ui_message.metadata or {}),
                 "co2_impact": co2_impact,
+            }
+
+        if self._is_truncated:
+            _output_ui_message.metadata = {
+                **(_output_ui_message.metadata or {}),
+                **_truncation_annotation(),
             }
 
         usage["co2_impact"] += self.conversation.agent_usage.get("co2_impact", 0)

@@ -2,6 +2,8 @@
 
 import hashlib
 import math
+from functools import wraps
+from urllib.parse import urlsplit
 
 from django import forms
 from django.conf import settings
@@ -9,7 +11,10 @@ from django.contrib.auth import BACKEND_SESSION_KEY
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.views import LoginView, LogoutView
 from django.http import Http404, HttpResponse
+from django.utils.decorators import method_decorator
 
+from csp.constants import NONCE, SELF
+from csp.decorators import csp_replace
 from lasuite.oidc_login.views import OIDCLogoutView
 from mozilla_django_oidc.urls import OIDCAuthenticateClass
 from rest_framework.throttling import SimpleRateThrottle
@@ -65,6 +70,26 @@ class LocalLoginThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
+def rh_form_policy(view):
+    """Allow form redirects only to origins explicitly configured by the deployment."""
+
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        sources = [SELF]
+        for destination in (settings.LOGIN_REDIRECT_URL, settings.LOGOUT_REDIRECT_URL):
+            parsed = urlsplit(str(destination))
+            if parsed.scheme in ("http", "https") and parsed.netloc:
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+                if origin not in sources:
+                    sources.append(origin)
+        return csp_replace({"form-action": sources, "style-src": [NONCE]})(view)(
+            request, *args, **kwargs
+        )
+
+    return wrapped
+
+
+@method_decorator(rh_form_policy, name="dispatch")
 class LocalLogoutView(LogoutView):
     """GET displays confirmation; only a CSRF-protected POST ends the session."""
 
@@ -86,6 +111,7 @@ def proconnect_login(request):
     return OIDCAuthenticateClass.as_view()(request)
 
 
+@rh_form_policy
 def technical_login(request):
     """Protect password login with CSRF, throttling and the configured access policy."""
     if not local_login_enabled():

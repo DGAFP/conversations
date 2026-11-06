@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Conversations — Assistant RH{% endblock %}</title>
-    <style>
+    <style nonce="{{ request.csp_nonce }}">
       body { font-family: system-ui, sans-serif; background: #f6f6f6; color: #161616; margin: 0; }
       main { max-width: 28rem; margin: 8vh auto; padding: 2rem; background: white; }
       label, input { display: block; }

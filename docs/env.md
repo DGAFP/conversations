@@ -88,7 +88,7 @@ These are the environment variables you can set for the `conversations-backend` 
 | LOGIN_REDIRECT_URL_FAILURE                      | login redirect url on failure                                                                                                     |                                                         |
 | LOGOUT_REDIRECT_URL                             | logout redirect url                                                                                                               |                                                         |
 | OIDC_USE_NONCE                                  | use nonce for OIDC                                                                                                                | true                                                    |
-| OIDC_REDIRECT_REQUIRE_HTTPS                     | Require https for OIDC redirect url                                                                                               | false                                                   |
+| OIDC_REDIRECT_REQUIRE_HTTPS                     | Require https for OIDC redirect url                                                                                               | false (true in Production)                              |
 | OIDC_REDIRECT_ALLOWED_HOSTS                     | Allowed hosts for OIDC redirect url                                                                                               | []                                                      |
 | OIDC_STORE_ID_TOKEN                             | Store OIDC token                                                                                                                  | true                                                    |
 | OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION       | faillback to email for identification                                                                                             | true                                                    |
@@ -109,6 +109,7 @@ These are the environment variables you can set for the `conversations-backend` 
 | AI_MODEL                                        | AI Model name to use (used in default LLM configuration, not for production use)                                                  |                                                         |
 | AI_AGENT_INSTRUCTIONS                           | Base instruction for the AI agent (used in default LLM configuration, not for production use)                                     | You are a helpful assistant. Wrap formulas...           |
 | AI_AGENT_TOOLS                                  | List of enabled tools for the agent (used in default LLM configuration, not for production use)                                   | []                                                      |
+| LLM_MAX_OUTPUT_TOKENS_PER_MESSAGE               | Maximum number of output tokens the LLM can generate per message. When reached, the response is truncated and the user is notified. A response cut off before any text (e.g. a reasoning model) shows only the notice. `0` disables the limit. Servers that ignore `max_completion_tokens` need a profile flag, see [LLM configuration](llm-configuration.md#model-profile). | 0                                                       |
 | DATAGOUV_CONNECTOR_URL                          | data.gouv MCP connector endpoint (empty disables the connector entirely)                                                          |                                                         |
 | DATAGOUV_CONNECTOR_INIT_TIMEOUT                 | Seconds to wait for the data.gouv connector to connect before dropping it for the turn (`0` disables this bound)                  | 5.0                                                     |
 | DATAGOUV_CONNECTOR_READ_TIMEOUT                 | Seconds a single data.gouv connector tool call may take before it is cut off (`0` disables this bound)                            | 30.0                                                    |
@@ -136,6 +137,26 @@ These are the environment variables you can set for the `conversations-backend` 
 | API_CONVERSATION_CREATE_DAILY_THROTTLE_RATE     | Daily limit on conversation creation, per user. See [Rate limiting](#rate-limiting)                                               | 100/day                                                 |
 | API_PROJECT_CREATE_HOURLY_THROTTLE_RATE         | Hourly limit on project creation, per user. See [Rate limiting](#rate-limiting)                                                   | 10/hour                                                 |
 | API_PROJECT_CREATE_DAILY_THROTTLE_RATE          | Daily limit on project creation, per user. See [Rate limiting](#rate-limiting)                                                    | 100/day                                                 |
+| SECURE_HSTS_SECONDS                             | HSTS max-age in seconds (Production)                                                                                              | 31536000                                                |
+| SECURE_HSTS_INCLUDE_SUBDOMAINS                  | add includeSubDomains to the HSTS header: binds every subdomain of the host to https (Production)                                 | false                                                   |
+| SECURE_HSTS_PRELOAD                             | add preload to the HSTS header, required to submit the domain to the browsers' preload list (Production)                          | false                                                   |
+| CONTENT_SECURITY_POLICY_DIRECTIVES              | Content-Security-Policy directives of the backend responses, as a Python dict literal, not JSON (e.g. `{"default-src": ["'self'"], "upgrade-insecure-requests": True}`) | every directive set to 'none'                           |
+| CONTENT_SECURITY_POLICY_EXCLUDE_URL_PREFIXES    | Comma-separated URL prefixes served without Content-Security-Policy (e.g. `/admin,/other`)                                        | /admin                                                  |
+| RATE_LIMIT_ADMIN_LOGIN_FAILURE_LIMIT            | failed Django admin logins before the account and the IP are locked out                                                           | 5                                                       |
+| RATE_LIMIT_ADMIN_LOGIN_COOLOFF_HOURS            | duration of a Django admin lockout, in hours (unlock early with `manage.py axes_reset_username <username>` for an account and `manage.py axes_reset_ip <ip>` for an IP) | 0.25                                                    |
+
+
+## Secrets from files
+
+These secrets can be read from a file instead of the environment, for instance a mounted
+Kubernetes secret: set the variable name suffixed with `_FILE` to the path of the file
+(`DJANGO_SECRET_KEY_FILE=/run/secrets/django-secret-key`). The file wins over the plain
+variable when both are set.
+
+`DJANGO_SECRET_KEY`, `DB_PASSWORD`, `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`,
+`DJANGO_EMAIL_HOST_PASSWORD`, `OIDC_RP_CLIENT_SECRET`, `OIDC_STORE_REFRESH_TOKEN_KEY`,
+`AI_API_KEY`, `ALBERT_API_KEY`, `BRAVE_API_KEY`, `STAAN_API_KEY`, `BREVO_API_KEY`,
+`LANGFUSE_SECRET_KEY` and `PROMETHEUS_API_KEY`.
 
 
 ## Access control

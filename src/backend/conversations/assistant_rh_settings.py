@@ -24,7 +24,10 @@ class AssistantRHSettings:
         super().setup()  # pylint: disable=no-member
         if cls.ASSISTANT_RH_ENABLED:
             if cls.ASSISTANT_RH_LOCAL_LOGIN_ENABLED and not cls.ASSISTANT_RH_OIDC_ENABLED:
-                cls.AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
+                cls.AUTHENTICATION_BACKENDS = [
+                    "axes.backends.AxesStandaloneBackend",
+                    "django.contrib.auth.backends.ModelBackend",
+                ]
             cls.REST_FRAMEWORK = {
                 **cls.REST_FRAMEWORK,
                 "DEFAULT_AUTHENTICATION_CLASSES": (
