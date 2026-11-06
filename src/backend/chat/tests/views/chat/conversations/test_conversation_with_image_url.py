@@ -222,7 +222,6 @@ def test_post_conversation_with_local_image_url(
             "provider_details": None,
             "provider_name": None,
             "provider_response_id": None,
-            "workspace_ref": None,
             "provider_url": None,
             "state": "complete",
             "timestamp": "2025-10-18T20:48:20.286204Z",
@@ -525,7 +524,6 @@ def test_post_conversation_with_local_image_url_in_history(
                 "provider_details": None,
                 "provider_name": None,
                 "provider_response_id": None,
-                "workspace_ref": None,
                 "timestamp": "2025-10-18T20:48:20.286204Z",
                 "usage": {
                     "audio_seconds": 0.0,
@@ -731,7 +729,6 @@ def test_post_conversation_with_local_image_url_in_history(
             "provider_details": None,
             "provider_name": None,
             "provider_response_id": None,
-            "workspace_ref": None,
             "timestamp": "2025-10-18T20:48:20.286204Z",
             "usage": {
                 "audio_seconds": 0.0,
@@ -784,7 +781,6 @@ def test_post_conversation_with_local_image_url_in_history(
             "provider_details": None,
             "provider_name": None,
             "provider_response_id": None,
-            "workspace_ref": None,
             "provider_url": None,
             "state": "complete",
             "timestamp": "2025-10-18T20:48:20.286204Z",

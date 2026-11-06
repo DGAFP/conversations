@@ -11,7 +11,9 @@ from chat.clients.exceptions import StreamCancelException
 from chat.clients.pydantic_ai import AIAgentService
 from chat.factories import ChatConversationFactory
 
-pytestmark = pytest.mark.django_db()
+# Async ORM calls use another connection; truncate their committed rows after
+# each test rather than relying on the main thread's transaction rollback.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 STREAM_DURATION = "conversations_chat_stream_duration_seconds_count"
 

@@ -10,6 +10,13 @@ and this project adheres to
 
 - Preserve Assistant RH sources, ProConnect, corpus grants and branding when
   integrating upstream v0.0.26 into staging.
+- Keep RH source capture stable when the OpenAI SDK drains a stream twice.
+- Handle PyJWT token errors as authentication refusals for ProConnect.
+- Isolate async stream-metrics tests from subsequent database tests.
+- Open conflicted upstream sync PRs for manual resolution instead of failing.
+- Add scheduled pull requests for individual upstream releases.
+- Upgrade vulnerable dependencies and repair the repository CI checks.
+- 👷(ci) prepare guarded staging delivery to Scaleway Kapsule
 
 - ✨(frontend) show the ministry acronym beside the model picker logo,
   including read-only conversations and single-corpus access.
@@ -43,18 +50,6 @@ and this project adheres to
   and corpus grants.
 - Report revoked delegation as a rights error, throttle local login per
   account and sign out sessions without an audit nonce.
-
-
-- Open conflicted upstream sync PRs for manual resolution instead of failing.
-- Add scheduled pull requests for individual upstream releases.
-- Upgrade vulnerable dependencies and repair the repository CI checks.
-- Add individual admission, current group corpus grants and signed API
-  delegation.
-- Keep conversation ministry fixed and hide history when access is withdrawn.
-- Add opt-in local password login before OIDC setup, preserving admission and
-  corpus grants.
-- Report revoked delegation as a rights error, throttle local login per account
-  and sign out sessions without an audit nonce.
 
 ## [0.0.26] - 2026-10-22
 
