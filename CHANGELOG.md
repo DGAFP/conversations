@@ -8,6 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- Integrate upstream v0.0.27 while retaining the RH security dependencies.
+
 - Keep completed answers visible when retrieval overlaps stream finalization.
 - Keep active turns alive while reasoning or summary frames are emitted.
 
@@ -53,6 +55,17 @@ and this project adheres to
   and corpus grants.
 - Report revoked delegation as a rights error, throttle local login per
   account and sign out sessions without an audit nonce.
+
+## [0.0.27] - 2026-10-28
+
+### Fixed
+
+- 🐛(back) add socket timeouts to the Redis cache and Celery clients
+
+### Changed
+
+- 🔒️(front) upgrade undici and zod to fix CVE-2026-109869 and CVE-2023-54404
+- 🔒️(back) upgrade pypdf to 6.21.2 to fix DoS CVEs
 
 ## [0.0.26] - 2026-10-22
 
@@ -583,7 +596,9 @@ and this project adheres to
 - 💄(chat) add code highlighting for LLM responses #67
 - 🔧(evals) add run_evals management command
 
-[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.26...main
+[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.27...main
+
+[0.0.27]: https://github.com/suitenumerique/conversations/compare/v0.0.26...v0.0.27
 
 [0.0.26]: https://github.com/suitenumerique/conversations/compare/v0.0.25...v0.0.26
 
