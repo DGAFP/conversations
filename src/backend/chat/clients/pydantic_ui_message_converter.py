@@ -5,9 +5,7 @@ and UserContent/ModelMessage (pydantic_ai.messages.py).
 
 import base64
 import json
-import logging
 import uuid
-from dataclasses import asdict
 from typing import List, Optional
 
 from pydantic_ai.messages import (
@@ -28,6 +26,8 @@ from pydantic_ai.messages import (
     UserContent,
     UserPromptPart,
 )
+
+from core.file_upload.mime_types import resolve_markdown_content_type
 
 from chat.ai_sdk_types import (
     TOOL_PART_PREFIX,
@@ -72,7 +72,30 @@ def _file_part_to_user_content(part: FileUIPart) -> UserContent:
         )
     if (part.mediaType or "").startswith(IMAGE_MIME_PREFIX):
         return ImageUrl(url=part.url, media_type=part.mediaType, identifier=part.filename)
-    return DocumentUrl(url=part.url, media_type=part.mediaType, identifier=part.filename)
+    # The browser may send a markdown file as application/octet-stream: trust its name.
+    media_type = resolve_markdown_content_type(part.filename, part.mediaType)
+    return DocumentUrl(url=part.url, media_type=media_type, identifier=part.filename)
+
+
+def merge_by_kind(messages: List[ModelMessage]) -> tuple[ModelRequest, ModelResponse]:
+    """One request and one response, as a turn is shown and stored.
+
+    Each tool round is its own request/response pair; shown one by one, every
+    round would become an empty answer bubble with its own action bar.
+    Only for `messages`: `pydantic_messages` keeps every round for the model.
+    """
+    return (
+        ModelRequest(
+            parts=[part for msg in messages if isinstance(msg, ModelRequest) for part in msg.parts],
+            kind="request",
+        ),
+        ModelResponse(
+            parts=[
+                part for msg in messages if isinstance(msg, ModelResponse) for part in msg.parts
+            ],
+            kind="response",
+        ),
+    )
 
 
 def model_message_to_ui_message(model_message: ModelMessage) -> Optional[UIMessage]:
@@ -82,12 +105,6 @@ def model_message_to_ui_message(model_message: ModelMessage) -> Optional[UIMessa
     Returns None for a request holding nothing the UI renders (a system prompt
     or a tool return on its own); callers must skip it rather than store it.
     """
-    logging.getLogger(__name__).debug(
-        "Converting ModelMessage to UIMessage: %s %s",
-        type(model_message),
-        asdict(model_message),
-    )
-
     # Unused: kept from the Pydantic AI rewrite as the intended place to carry
     # tool-call state across the parts of one message (pairing a ToolCallPart
     # with the ToolReturnPart that answers it, which is dropped today).

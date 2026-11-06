@@ -11,16 +11,21 @@ UI_MESSAGE_STREAM_HEADER = "x-vercel-ai-ui-message-stream"
 
 ZERO_USAGE = {
     "audio_seconds": 0.0,
-    "cost": None,
     "cache_audio_read_tokens": 0,
     "cache_read_tokens": 0,
     "cache_write_tokens": 0,
+    "cost": None,
     "details": {},
     "input_audio_tokens": 0,
     "input_tokens": 0,
     "output_audio_tokens": 0,
     "output_tokens": 0,
 }
+
+
+def unwrap_instruction(instruction):
+    """Return the callable or string payload of a Pydantic AI sourced instruction."""
+    return getattr(instruction, "instruction", instruction)
 
 
 def assert_data_stream_response(response):

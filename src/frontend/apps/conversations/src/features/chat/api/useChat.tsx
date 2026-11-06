@@ -30,11 +30,15 @@ const fetchAPIAdapter = (input: RequestInfo | URL, init?: RequestInit) => {
 
   // Read at request time, not at render time: the transport is built once but
   // these preferences change between messages.
-  const { forceWebSearch, selectedModelHrid } =
+  const { forceWebSearch, forceDatagouv, selectedModelHrid } =
     useChatPreferencesStore.getState();
 
   if (forceWebSearch) {
     searchParams.append('force_web_search', 'true');
+  }
+
+  if (forceDatagouv) {
+    searchParams.append('force_datagouv', 'true');
   }
 
   if (selectedModelHrid) {
@@ -124,6 +128,29 @@ export function isImagesSkippedEvent(
   );
 }
 
+// Stream-protocol contract with the backend. Mirrored in `pydantic_ai.py`
+// (CONNECTOR_UNAVAILABLE_EVENT_TYPE). Keep both sides in sync.
+export const CONNECTOR_UNAVAILABLE_EVENT_TYPE =
+  'connector_unavailable' as const;
+
+export interface ConnectorUnavailableEvent {
+  type: typeof CONNECTOR_UNAVAILABLE_EVENT_TYPE;
+  kind: 'chat_notice';
+  connector_id: string;
+}
+
+export function isConnectorUnavailableEvent(
+  item: unknown,
+): item is ConnectorUnavailableEvent {
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    'type' in item &&
+    item.type === CONNECTOR_UNAVAILABLE_EVENT_TYPE &&
+    'connector_id' in item
+  );
+}
+
 /** A file part the backend kept on the message but hid from the model. */
 export type SkippableFileUIPart = FileUIPart & {
   skipped?: { reason: string };
@@ -170,9 +197,18 @@ export interface UseChatOptions {
   onError?: (error: Error) => void;
   /** Called for each `images_skipped` notice streamed by the backend. */
   onImagesSkipped?: (kind: ImagesSkippedEventKind) => void;
+  /**
+   * Called when a forced connector could not be reached this turn.
+   */
+  onConnectorUnavailable?: () => void;
 }
 
-export function useChat({ api, onImagesSkipped, ...options }: UseChatOptions) {
+export function useChat({
+  api,
+  onImagesSkipped,
+  onConnectorUnavailable,
+  ...options
+}: UseChatOptions) {
   const queryClient = useQueryClient();
   // Epoch ms until which the user must wait before sending a new message.
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
@@ -181,6 +217,8 @@ export function useChat({ api, onImagesSkipped, ...options }: UseChatOptions) {
   // ends up holding must always reach the latest render's handlers.
   const onImagesSkippedRef = useRef(onImagesSkipped);
   onImagesSkippedRef.current = onImagesSkipped;
+  const onConnectorUnavailableRef = useRef(onConnectorUnavailable);
+  onConnectorUnavailableRef.current = onConnectorUnavailable;
 
   const transport = useMemo(
     () => new DefaultChatTransport({ api, fetch: fetchAPIAdapter }),
@@ -204,6 +242,8 @@ export function useChat({ api, onImagesSkipped, ...options }: UseChatOptions) {
         setCooldownUntil(Date.now() + item.seconds * 1000);
       } else if (isImagesSkippedEvent(item)) {
         onImagesSkippedRef.current?.(item.kind);
+      } else if (isConnectorUnavailableEvent(item)) {
+        onConnectorUnavailableRef.current?.();
       }
     },
     [queryClient],
@@ -217,6 +257,23 @@ export function useChat({ api, onImagesSkipped, ...options }: UseChatOptions) {
   // assistant-terminated message list with an empty stream: the bubble stays
   // blank instead of showing an error and a retry.
   const result = useAiSdkChat({ ...options, transport, onData });
+
+  // A reload cuts the stream with a network TypeError, which the SDK reports as
+  // a failed turn, flashing the error box. Aborting first ends it quietly; the
+  // turn keeps running server-side and is picked up again after the reload.
+  // `beforeunload`, not `pagehide`: Firefox cuts the stream as the navigation
+  // starts, before `pagehide` fires. Only listened to during a turn: Firefox
+  // keeps a page with a `beforeunload` listener out of the back/forward cache.
+  const { status, stop } = result;
+  const isTurnRunning = status === 'submitted' || status === 'streaming';
+  useEffect(() => {
+    if (!isTurnRunning) {
+      return;
+    }
+    const onBeforeUnload = () => void stop();
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isTurnRunning, stop]);
 
   // Restore the cooldown from the backend (the authoritative source) so it
   // survives a refresh, a new tab, or switching conversations. react-query

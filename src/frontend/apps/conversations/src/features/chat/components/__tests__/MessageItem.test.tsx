@@ -35,6 +35,10 @@ vi.mock('rehype-katex', () => ({ default: () => {} }));
 vi.mock('remark-gfm', () => ({ default: () => {} }));
 vi.mock('remark-math', () => ({ default: () => {} }));
 
+// lottie-web polls `document.readyState` on an interval once imported; if the
+// file ends first, the tick fires after jsdom teardown and fails the run.
+vi.mock('lottie-react', () => ({ Lottie: () => null }));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -648,6 +652,44 @@ describe('MessageItem', () => {
       ).not.toBeInTheDocument();
     });
 
+    it('does not render copy button while the turn runs without us', async () => {
+      // After a reload mid-answer the client only polls, so its own status
+      // reads "ready" while the backend is still producing the answer.
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            status="ready"
+            isLastMessage={true}
+            isLastAssistantMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(
+        screen.queryByRole('button', { name: 'Copy' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('keeps the copy button on the previous answer while the turn runs without us', async () => {
+      // Reloaded before the model wrote anything: the question is the last
+      // message, and the last assistant message is the finished answer before it.
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            status="ready"
+            isLastMessage={false}
+            isLastAssistantMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+    });
+
     it('does not render the action bar before the answer has content', async () => {
       // v5 creates the assistant message as soon as the response starts, with
       // no parts yet. The bar used to render on that empty bubble, putting the
@@ -855,6 +897,72 @@ describe('MessageItem', () => {
 
       expect(
         screen.queryByTestId('message-energy-indicator'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('interrupted answers', () => {
+    it('flags an answer the backend stored as interrupted', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+          />,
+        );
+      });
+
+      expect(screen.getByTestId('interrupted-answer')).toBeInTheDocument();
+    });
+
+    it('does not flag the answer a turn running without us is still writing', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+            isLastMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(
+        screen.queryByTestId('interrupted-answer'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('keeps flagging an earlier answer while a turn runs without us', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+            isLastMessage={false}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(screen.getByTestId('interrupted-answer')).toBeInTheDocument();
+    });
+
+    it('leaves a completed answer unflagged', async () => {
+      await act(async () => {
+        renderWithProviders(<MessageItem {...defaultProps} />);
+      });
+
+      expect(
+        screen.queryByTestId('interrupted-answer'),
       ).not.toBeInTheDocument();
     });
   });
