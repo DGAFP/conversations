@@ -8,6 +8,11 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- Integrate upstream v0.0.28 while preserving RH authentication and sources.
+- Keep RH login forms usable under the new nonce-based security policy.
+- Preserve admin lockout protection in password-only RH deployments.
+- Join upstream NUL-safe JSON fields with the applied RH migration history.
+
 - Integrate upstream v0.0.27 while retaining the RH security dependencies.
 
 - Keep completed answers visible when retrieval overlaps stream finalization.
@@ -56,16 +61,48 @@ and this project adheres to
 - Report revoked delegation as a rights error, throttle local login per
   account and sign out sessions without an audit nonce.
 
-## [0.0.27] - 2026-10-28
+## [0.0.28] - 2026-11-03
+
+### Added
+
+- ✨(back) add opt-in output token limit per message
+- 🔒️(back) lock out repeated failed admin logins
+- 🔒️(back) require strong admin passwords and hash them with Argon2
+- 🔒️(back) add a Content-Security-Policy to backend responses
+- ✨(back) read secrets from files
+
+### Changed
+
+- 🔒️(back) raise HSTS to one year, make subdomains and preload opt-in
+- 🔒️(back) require https for OIDC redirects in production
+
+### Changed
+
+- 🔒️(back) upgrade authlib, dnspython and pypdf to fix CVEs
+- ⬆️(back,front) upgrade minor and patch dependencies
 
 ### Fixed
 
-- 🐛(back) add socket timeouts to the Redis cache and Celery clients
+- 🐛(back) keep parsed conversation documents out of the Celery result backend
+- 🐛(back) accept list content in non-streaming Albert responses
+- 🐛(back) stop losing chat turns when a document contains NUL characters
+- 🐛(ci) key the Playwright browser cache on the Ubuntu release
+- 🔇(back) log tool retries as warnings, keep the cause on exhaustion
+- 🐛(back) skip filing a turn whose conversation was deleted
+- 🐛(oidc) log in the active user when several users share an email
+- 🐛(frontend) keep chat working in older browsers
+
+## [0.0.27] - 2026-10-28
 
 ### Changed
 
 - 🔒️(front) upgrade undici and zod to fix CVE-2026-109869 and CVE-2023-54404
 - 🔒️(back) upgrade pypdf to 6.21.2 to fix DoS CVEs
+- 💬(front) reword the message shown while project files are processed
+
+### Fixed
+
+- 🐛(back) add socket timeouts to the Redis cache and Celery clients
 
 ## [0.0.26] - 2026-10-22
 
@@ -74,6 +111,7 @@ and this project adheres to
 - ✨(helm) add a ServiceMonitor and a PodMonitor for the backend metrics
 - 📝(project) add pull request and AI usage policy
 - ✨(back) make the Sentry backend traces sample rate configurable
+- ✨(helm) serve a custom robots.txt from the frontend
 
 ### Changed
 
@@ -88,6 +126,7 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(back) keep the original file of a document attached to a conversation
 - 💄(front) add margin-top for the carbon impact module.
 - ⚡️(front) disable posthog-js periodic feature flag reloads
 - 🐛(front) avoid stale pages and blank screens after a deploy
@@ -596,7 +635,9 @@ and this project adheres to
 - 💄(chat) add code highlighting for LLM responses #67
 - 🔧(evals) add run_evals management command
 
-[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.27...main
+[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.28...main
+
+[0.0.28]: https://github.com/suitenumerique/conversations/compare/v0.0.27...v0.0.28
 
 [0.0.27]: https://github.com/suitenumerique/conversations/compare/v0.0.26...v0.0.27
 

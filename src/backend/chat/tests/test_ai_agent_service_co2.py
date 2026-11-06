@@ -58,6 +58,7 @@ def service_fixture(conversation):
             tools=[],
         )
     )
+    s._last_finish_reason = None
     return s
 
 

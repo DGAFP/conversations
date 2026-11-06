@@ -9,7 +9,10 @@ from django.contrib.auth import BACKEND_SESSION_KEY
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.views import LoginView, LogoutView
 from django.http import Http404, HttpResponse
+from django.utils.decorators import method_decorator
 
+from csp.constants import NONCE, SELF
+from csp.decorators import csp_replace
 from lasuite.oidc_login.views import OIDCLogoutView
 from mozilla_django_oidc.urls import OIDCAuthenticateClass
 from rest_framework.throttling import SimpleRateThrottle
@@ -65,6 +68,7 @@ class LocalLoginThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
+@method_decorator(csp_replace({"form-action": [SELF], "style-src": [NONCE]}), name="dispatch")
 class LocalLogoutView(LogoutView):
     """GET displays confirmation; only a CSRF-protected POST ends the session."""
 
@@ -86,6 +90,7 @@ def proconnect_login(request):
     return OIDCAuthenticateClass.as_view()(request)
 
 
+@csp_replace({"form-action": [SELF], "style-src": [NONCE]})
 def technical_login(request):
     """Protect password login with CSRF, throttling and the configured access policy."""
     if not local_login_enabled():
