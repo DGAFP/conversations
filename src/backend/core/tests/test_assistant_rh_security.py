@@ -67,3 +67,28 @@ def test_password_only_setup_keeps_admin_lockout(local_account, client, settings
     # Ordinary RH users still authenticate through ModelBackend.
     response = client.post("/api/v1.0/authenticate/", local_account)
     assert response.status_code == 302
+
+
+@pytest.mark.parametrize("path", ["authenticate/", "local/authenticate/", "logout/"])
+@pytest.mark.parametrize("same_origin", [True, False])
+def test_rh_form_redirect_policy_uses_only_configured_origins(
+    local_account, client, settings, path, same_origin
+):
+    """Separate frontend origins work without trusting request-supplied redirects."""
+    del local_account
+    settings.LOGIN_REDIRECT_URL = "http://localhost:3000/app?next=/home"
+    settings.LOGOUT_REDIRECT_URL = (
+        "http://localhost:3000/signed-out" if same_origin else "https://frontend.test:444/bye"
+    )
+    response = client.get("/api/v1.0/" + path + "?next=https://untrusted.invalid/")
+    assert response.status_code == 200
+    directives = dict(
+        directive.strip().split(" ", 1)
+        for directive in response.headers["Content-Security-Policy"].split(";")
+    )
+    expected = "'self' http://localhost:3000"
+    if not same_origin:
+        expected += " https://frontend.test:444"
+    assert directives["form-action"] == expected
+    assert directives["script-src"] == "'none'"
+    assert directives["frame-ancestors"] == "'none'"

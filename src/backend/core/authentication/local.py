@@ -2,6 +2,8 @@
 
 import hashlib
 import math
+from functools import wraps
+from urllib.parse import urlsplit
 
 from django import forms
 from django.conf import settings
@@ -68,7 +70,26 @@ class LocalLoginThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
-@method_decorator(csp_replace({"form-action": [SELF], "style-src": [NONCE]}), name="dispatch")
+def rh_form_policy(view):
+    """Allow form redirects only to origins explicitly configured by the deployment."""
+
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        sources = [SELF]
+        for destination in (settings.LOGIN_REDIRECT_URL, settings.LOGOUT_REDIRECT_URL):
+            parsed = urlsplit(str(destination))
+            if parsed.scheme in ("http", "https") and parsed.netloc:
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+                if origin not in sources:
+                    sources.append(origin)
+        return csp_replace({"form-action": sources, "style-src": [NONCE]})(view)(
+            request, *args, **kwargs
+        )
+
+    return wrapped
+
+
+@method_decorator(rh_form_policy, name="dispatch")
 class LocalLogoutView(LogoutView):
     """GET displays confirmation; only a CSRF-protected POST ends the session."""
 
@@ -90,7 +111,7 @@ def proconnect_login(request):
     return OIDCAuthenticateClass.as_view()(request)
 
 
-@csp_replace({"form-action": [SELF], "style-src": [NONCE]})
+@rh_form_policy
 def technical_login(request):
     """Protect password login with CSRF, throttling and the configured access policy."""
     if not local_login_enabled():
