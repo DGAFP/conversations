@@ -4,6 +4,7 @@ from typing import Optional
 from urllib.parse import quote
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from django_pydantic_field.rest_framework import SchemaField  # pylint: disable=no-name-in-module
@@ -392,21 +393,27 @@ class ChatConversationRetrieveSerializer(ChatConversationSerializer):
 
     @staticmethod
     def _chunks(obj):
-        """The conversation's leftover chunks, read once per conversation.
+        """Read messages and chunks under the same lock as a landing turn.
 
-        Cached on the instance rather than re-queried: both fields below want
-        the same rows, and a retrieve serializes one conversation.
+        A conversation loaded before completion must not be paired with chunks
+        read after completion deleted them. Cache the snapshot for both fields.
         """
         if not hasattr(obj, "cached_stream_chunks"):
-            obj.cached_stream_chunks = list(obj.stream_chunks.all())
+            with transaction.atomic():
+                obj.refresh_from_db(
+                    from_queryset=models.ChatConversation.objects.select_for_update(),
+                    fields=["messages"],
+                )
+                obj.cached_stream_chunks = list(obj.stream_chunks.all())
             stream_chunks.describe(obj, obj.cached_stream_chunks)
         return obj.cached_stream_chunks
 
     @extend_schema_field(SchemaField(schema=list[UIMessage]))
     def get_messages(self, obj):
         """Stored messages, plus the turn the chunks describe if one is pending."""
+        chunks = self._chunks(obj)
         messages = list(obj.messages)
-        messages.extend(stream_chunks.interrupted_messages(self._chunks(obj)))
+        messages.extend(stream_chunks.interrupted_messages(chunks))
         return [message.model_dump(mode="json") for message in messages]
 
     @extend_schema_field(serializers.BooleanField)

@@ -7,6 +7,7 @@ including what happens to a turn whose reader walks away.
 """
 
 import asyncio
+import threading
 import time
 
 from django.db import connections
@@ -15,6 +16,64 @@ import pytest
 from asgiref.sync import ThreadSensitiveContext, sync_to_async
 
 from chat.keepalive import stream_with_keepalive_async, stream_with_keepalive_sync
+
+
+@pytest.mark.asyncio
+async def test_frequent_async_frames_do_not_suppress_database_heartbeats(settings, monkeypatch):
+    """Reasoning and summary frames keep arriving without persisting text chunks."""
+    settings.KEEPALIVE_INTERVAL = 1
+    clock = [0.0]
+    monkeypatch.setattr("chat.keepalive.get_current_time", lambda: clock[0])
+    acknowledged = asyncio.Event()
+    ticks = []
+    frames = [f"reasoning {index}" for index in range(12)]
+
+    async def reasoning():
+        """Advance a clock without letting the producer outrun its reader."""
+        for frame in frames:
+            clock[0] += 0.25
+            yield frame
+            await acknowledged.wait()
+            acknowledged.clear()
+
+    async def beat():
+        """Record the periodic database callback."""
+        ticks.append(clock[0])
+
+    received = []
+    async for frame in stream_with_keepalive_async(reasoning(), beat):
+        received.append(frame)
+        acknowledged.set()
+
+    assert received == frames
+    assert ticks == [1.0, 2.0, 3.0]
+
+
+def test_frequent_sync_frames_do_not_suppress_database_heartbeats(settings, monkeypatch):
+    """The WSGI path also beats while non-persisted frames keep arriving."""
+    settings.KEEPALIVE_INTERVAL = 1
+    clock = [0.0]
+    monkeypatch.setattr("chat.keepalive.get_current_time", lambda: clock[0])
+    acknowledged = threading.Event()
+    ticks = []
+    frames = [f"reasoning {index}" for index in range(12)]
+
+    def reasoning():
+        """Advance a clock, waiting until the reader consumed each frame."""
+        for frame in frames:
+            clock[0] += 0.25
+            yield frame
+            assert acknowledged.wait(timeout=5)
+            acknowledged.clear()
+
+    received = []
+    for frame in stream_with_keepalive_sync(reasoning(), lambda: ticks.append(clock[0])):
+        received.append(frame)
+        acknowledged.set()
+
+    assert received == frames
+    assert len(ticks) >= 2
+    assert all(later - earlier >= 1 for earlier, later in zip(ticks, ticks[1:], strict=False))
 
 
 @pytest.mark.asyncio

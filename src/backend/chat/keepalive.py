@@ -146,11 +146,9 @@ async def stream_with_keepalive_async(
 
     Args:
         stream: The async iterator to wrap
-        on_keepalive: Awaited each time a pause is long enough to need a
-            keepalive. This loop is the only thing that ticks while the stream
-            produces nothing - the source can sit for minutes on a document
-            parse or a tool call - so it is also the only place from which
-            something blocked can prove it is still running. Failures are
+        on_keepalive: Awaited periodically even while the source emits frames.
+            Reasoning and summary keepalives do not persist chunks, so network
+            activity cannot substitute for a database heartbeat. Failures are
             logged and swallowed: a keepalive must not take the stream down.
         A reader that goes away does not take the source with it: the
             producer below is a task of its own, and it is left running. That
@@ -166,28 +164,44 @@ async def stream_with_keepalive_async(
     finished = asyncio.Event()
     reader_gone = asyncio.Event()
     keepalive_message = get_keepalive_message()
-    deadline = get_current_time() + settings.MAX_TURN_DURATION
+    interval = settings.KEEPALIVE_INTERVAL
+    last_yield_time = last_beat_time = get_current_time()
+    deadline = last_yield_time + settings.MAX_TURN_DURATION
 
     producer_task = asyncio.create_task(_consume_stream_async(stream, q, finished, reader_gone))
 
     try:
         while True:
+            now = get_current_time()
+            timeout = interval - (now - last_yield_time)
+            if on_keepalive is not None:
+                timeout = min(timeout, interval - (now - last_beat_time))
             try:
-                item = await asyncio.wait_for(q.get(), timeout=settings.KEEPALIVE_INTERVAL)
+                # A positive timeout lets an already queued frame win even if
+                # a heartbeat deadline just elapsed.
+                item = await asyncio.wait_for(q.get(), timeout=max(0.001, timeout))
                 if item is None:
                     break
                 if isinstance(item, Exception):
                     raise item
+                if not finished.is_set() and get_current_time() - last_beat_time >= interval:
+                    await _call_keepalive_async(on_keepalive)
+                    last_beat_time = get_current_time()
                 yield item
+                last_yield_time = get_current_time()
             except asyncio.TimeoutError:
-                # No data received within interval
                 if finished.is_set():
-                    # Producer is done, queue is empty (else we would not have timed out)
-                    break
+                    if q.empty():
+                        break
+                    continue
 
-                logger.debug("Send keepalive")
-                await _call_keepalive_async(on_keepalive)
-                yield keepalive_message
+                if get_current_time() - last_beat_time >= interval:
+                    await _call_keepalive_async(on_keepalive)
+                    last_beat_time = get_current_time()
+                if get_current_time() - last_yield_time >= interval:
+                    logger.debug("Send keepalive")
+                    yield keepalive_message
+                    last_yield_time = get_current_time()
     finally:
         if not producer_task.done():
             # The reader left before the source was done, which on ASGI is what
@@ -271,11 +285,10 @@ def _call_keepalive_sync(on_keepalive) -> None:
 def stream_with_keepalive_sync(stream: Iterator[str], on_keepalive=None) -> Iterator[str]:
     """Wraps a synchronous stream with keepalive messages.
 
-    `on_keepalive` is called each time a pause is long enough to need one, for
-    the same reason as in the async variant: this loop is the only thing still
-    running while the source produces nothing. It is called from the request's
-    own thread, not the keepalive thread, so it uses the connection that is
-    already open. Failures are logged and swallowed.
+    `on_keepalive` runs periodically regardless of output activity, as in the
+    async variant. It is called from the request's own thread, not the keepalive
+    thread, so it uses the connection that is already open. Failures are logged
+    and swallowed.
 
     The source and the keepalive clock each run in their own thread and reach
     this loop through `q`; `_consume_stream_sync` and `_send_keepalives` are
@@ -287,6 +300,7 @@ def stream_with_keepalive_sync(stream: Iterator[str], on_keepalive=None) -> Iter
     keepalive_message = get_keepalive_message()
     # Mutable container so threads can read/write shared timestamp
     last_yield_time = [get_current_time()]
+    last_beat_time = last_yield_time[0]
 
     for target, args in (
         (_consume_stream_sync, (stream, q, stream_done)),
@@ -297,8 +311,17 @@ def stream_with_keepalive_sync(stream: Iterator[str], on_keepalive=None) -> Iter
     try:
         # Continue while stream is active or queue has still items
         while not stream_done.is_set() or not q.empty():
+            timeout = 1
+            if on_keepalive is not None and not stream_done.is_set():
+                if get_current_time() - last_beat_time >= settings.KEEPALIVE_INTERVAL:
+                    _call_keepalive_sync(on_keepalive)
+                    last_beat_time = get_current_time()
+                timeout = max(
+                    0.001,
+                    min(1, settings.KEEPALIVE_INTERVAL - (get_current_time() - last_beat_time)),
+                )
             try:
-                item = q.get(timeout=1)  # short timeout, avoid blocking and stay responsive
+                item = q.get(timeout=timeout)
             except queue.Empty:
                 continue
 
@@ -312,7 +335,6 @@ def stream_with_keepalive_sync(stream: Iterator[str], on_keepalive=None) -> Iter
                 # needs keeping alive once the stream is done, so drop it.
                 if stream_done.is_set():
                     continue
-                _call_keepalive_sync(on_keepalive)
 
             yield item
             last_yield_time[0] = get_current_time()

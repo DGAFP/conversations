@@ -4,6 +4,7 @@
 import json
 import logging
 import time
+from itertools import count
 from unittest.mock import ANY, patch
 
 from django.utils import timezone
@@ -265,7 +266,7 @@ def test_post_conversation_data_protocol_drops_keepalive_after_the_terminator(
     ``test_post_conversation_async_triggers_keepalive``.
     """
     chat_conversation = ChatConversationFactory(owner__language="en-us")
-    mock_time.side_effect = [float(i * 60) for i in range(20)]
+    mock_time.side_effect = count(step=60)
     url = f"/api/v1.0/chats/{chat_conversation.pk}/conversation/"
     api_client.force_login(chat_conversation.owner)
 

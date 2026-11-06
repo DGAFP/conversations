@@ -8,6 +8,9 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- Keep completed answers visible when retrieval overlaps stream finalization.
+- Keep active turns alive while reasoning or summary frames are emitted.
+
 - Preserve Assistant RH sources, ProConnect, corpus grants and branding when
   integrating upstream v0.0.26 into staging.
 - Keep RH source capture stable when the OpenAI SDK drains a stream twice.
