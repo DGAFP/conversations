@@ -20,7 +20,8 @@ from chat.clients.pydantic_ai import AIAgentService
 from chat.factories import ChatConversationFactory
 from chat.turn.prompt import strip_thinking_parts
 
-pytestmark = pytest.mark.django_db()
+# Async database writes use a separate connection that needs transactional cleanup.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def _response(*parts):

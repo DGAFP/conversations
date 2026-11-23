@@ -17,7 +17,8 @@ from chat.factories import ChatConversationFactory
 from chat.llm_configuration import LLModel, LLMProfile, LLMProvider
 from conversations.settings import Base
 
-pytestmark = pytest.mark.django_db()
+# Async database writes use a separate connection that needs transactional cleanup.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture(autouse=True)

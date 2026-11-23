@@ -25,7 +25,8 @@ from chat.turn.event_mapper import TurnEventMapper
 from chat.turn.prompt import TurnInputs
 from chat.vercel_ai_sdk.core import events_v4
 
-pytestmark = pytest.mark.django_db()
+# Async database writes use a separate connection that needs transactional cleanup.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture(autouse=True)

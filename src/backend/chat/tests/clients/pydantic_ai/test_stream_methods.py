@@ -16,7 +16,8 @@ from chat.models import ChatConversation, ChatStreamChunk
 from chat.tests.utils import stream_body
 from chat.vercel_ai_sdk.core import events_v4
 
-pytestmark = pytest.mark.django_db()
+# Async database writes use a separate connection that needs transactional cleanup.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 # A provider error body echoing the input, which must never reach the logs.
 PROVIDER_BODY = "echoed secret document passage"
@@ -285,7 +286,6 @@ async def _run_failing_turn(service, acreate):
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
 async def test_stream_data_async_conversation_deleted_between_check_and_insert():
     """A delete landing after the existence check still ends the stream cleanly."""
     conversation = await sync_to_async(ChatConversationFactory)()
@@ -303,7 +303,6 @@ async def test_stream_data_async_conversation_deleted_between_check_and_insert()
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
 async def test_stream_data_async_insert_failure_reraised_when_conversation_exists():
     """An insert failure is not swallowed while the conversation still exists."""
     conversation = await sync_to_async(ChatConversationFactory)()
@@ -314,7 +313,6 @@ async def test_stream_data_async_insert_failure_reraised_when_conversation_exist
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
 async def test_stream_data_async_conversation_deleted_while_trail_is_filed():
     """A delete landing after the flush, as the trail is filed, still ends cleanly."""
     conversation = await sync_to_async(ChatConversationFactory)()

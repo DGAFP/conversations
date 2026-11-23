@@ -38,7 +38,8 @@ from chat.mcp_servers import (
 from chat.turn.event_mapper import TurnEventMapper
 from chat.turn.prompt import TurnInputs
 
-pytestmark = pytest.mark.django_db()
+# Async database writes use a separate connection that needs transactional cleanup.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 # The discard port: nothing listens there, so a connection is refused fast.
 CONNECTOR_URL = "http://127.0.0.1:9/mcp"
