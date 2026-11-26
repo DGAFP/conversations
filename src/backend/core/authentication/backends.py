@@ -5,15 +5,16 @@ import re
 import time
 
 from django.conf import settings
-from django.core.exceptions import SuspiciousOperation
+from django.core.exceptions import SuspiciousOperation, ValidationError
 
 import jwt
 from lasuite.oidc_login.backends import (
     OIDCAuthenticationBackend as LaSuiteOIDCAuthenticationBackend,
 )
 
+from core.authentication import invitations
 from core.brevo import add_user_to_brevo_list
-from core.models import AccessBypassEmail, DuplicateEmailError
+from core.models import AccessBypassEmail, AssistantRHInvitation, DuplicateEmailError
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,18 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
     This class overrides the default OIDC Authentication Backend to accommodate differences
     in the User and Identity models, and handles signed and/or encrypted UserInfo response.
     """
+
+    def store_tokens(self, access_token, id_token):
+        """With invitations enabled, defer storage until the identity has been admitted."""
+        if not invitations.enabled():
+            super().store_tokens(access_token, id_token)
+
+    def get_or_create_user(self, access_token, id_token, payload):
+        """Preserve the current session's tokens when a different identity is refused."""
+        user = super().get_or_create_user(access_token, id_token, payload)
+        if user is not None and invitations.enabled():
+            super().store_tokens(access_token, id_token)
+        return user
 
     def verify_token(self, token, **kwargs):
         """Keep upstream signature/nonce verification and enforce the RH token audience."""
@@ -178,6 +191,17 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         This allows to enable analytics by default during the alpha version and get
         more information about the usage of the application.
         """
+        if invitations.enabled():
+            try:
+                email = invitations.normalize_email(claims.get("email"))
+            except ValidationError:
+                email = None
+            if email and AssistantRHInvitation.objects.filter(email=email).exists():
+                raise invitations.InvitationRequired({**claims, "email": email})
+        return self.create_oidc_user(claims)
+
+    def create_oidc_user(self, claims):
+        """Persist an OIDC identity using the normal profile defaults."""
         return super().create_user(
             claims
             | {

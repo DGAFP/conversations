@@ -8,6 +8,7 @@ from rest_framework.routers import DefaultRouter
 
 from core.api import viewsets
 from core.authentication import local
+from core.authentication.views import confirm_invitation
 from core.file_upload.enums import FileToLLMMode
 
 from chat.views import (
@@ -60,6 +61,11 @@ urlpatterns = [
                     "proconnect/authenticate/",
                     local.proconnect_login,
                     name="assistant-rh-proconnect-login",
+                ),
+                path(
+                    "proconnect/confirm/",
+                    confirm_invitation,
+                    name="assistant-rh-proconnect-confirm",
                 ),
                 path(
                     "local/authenticate/",
