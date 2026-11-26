@@ -1,6 +1,7 @@
 """Opt-in configuration for the Assistant RH fork (server-side secrets only)."""
 
 from configurations import values
+from lasuite.configuration.values import SecretFileValue
 
 
 class AssistantRHSettings:
@@ -18,6 +19,13 @@ class AssistantRHSettings:
     ASSISTANT_RH_SIGNING_KEY_FILE = values.Value("", environ_prefix=None)
     ASSISTANT_RH_SIGNING_KID = values.Value("", environ_prefix=None)
     ASSISTANT_RH_AUDIT_KEY_FILE = values.Value("", environ_prefix=None)
+    SCW_TEM_API_URL = values.Value("https://api.scaleway.com", environ_prefix=None)
+    SCW_TEM_REGION = values.Value("fr-par", environ_prefix=None)
+    SCW_TEM_PROJECT_ID = values.Value("", environ_prefix=None)
+    SCW_TEM_SECRET_KEY = SecretFileValue(
+        None, environ_name="SCW_TEM_SECRET_KEY", environ_prefix=None
+    )
+    SCW_TEM_TIMEOUT = values.FloatValue(10.0, environ_prefix=None)
 
     @classmethod
     def setup(cls):

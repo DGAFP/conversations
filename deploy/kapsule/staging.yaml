@@ -9,6 +9,7 @@ backend:
   envFrom:
     - secretRef: {name: conversations-runtime}
     - secretRef: {name: conversations-proconnect}
+    - secretRef: {name: conversations-tem, optional: true}
   envVars:
     DJANGO_CONFIGURATION: Production
     DJANGO_SETTINGS_MODULE: conversations.settings
@@ -50,6 +51,10 @@ backend:
     ASSISTANT_RH_AUDIT_KEY_FILE: /etc/conversations-identity/audit.key
     DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,conversations-backend,conversations-backend.conversations.svc.cluster.local,staging.assistant-rh.beta.gouv.fr
     DJANGO_CSRF_TRUSTED_ORIGINS: https://staging.assistant-rh.beta.gouv.fr
+    DJANGO_EMAIL_BACKEND: core.mail.ScalewayTEMEmailBackend
+    DJANGO_EMAIL_FROM: "Assistant RH <ne-pas-repondre@staging.assistant-rh.beta.gouv.fr>"
+    SCW_TEM_PROJECT_ID: c1d3f629-d08d-439d-ba76-f115ea06e579
+    SCW_TEM_REGION: fr-par
     ENVIRONMENT: staging
     LOGIN_REDIRECT_URL: "/"
     LOGIN_REDIRECT_URL_FAILURE: "/"

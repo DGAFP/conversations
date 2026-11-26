@@ -8,6 +8,7 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- ✨(auth) send invitation confirmation codes via Scaleway TEM HTTP API.
 - Update dnspython and Soup Sieve to clear the staging security scan.
 
 - ✨(chat) add per-answer RH star ratings and detailed feedback.
