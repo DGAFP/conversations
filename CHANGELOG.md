@@ -8,6 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- Update dnspython and Soup Sieve to clear the staging security scan.
+
 - ✨(chat) add per-answer RH star ratings and detailed feedback.
 
 - Integrate upstream v0.0.28 while preserving RH authentication and sources.
