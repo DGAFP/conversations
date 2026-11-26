@@ -5,15 +5,16 @@ import re
 import time
 
 from django.conf import settings
-from django.core.exceptions import SuspiciousOperation
+from django.core.exceptions import SuspiciousOperation, ValidationError
 
 import jwt
 from lasuite.oidc_login.backends import (
     OIDCAuthenticationBackend as LaSuiteOIDCAuthenticationBackend,
 )
 
+from core.authentication import invitations
 from core.brevo import add_user_to_brevo_list
-from core.models import AccessBypassEmail, DuplicateEmailError
+from core.models import AccessBypassEmail, AssistantRHInvitation, DuplicateEmailError
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,17 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         This allows to enable analytics by default during the alpha version and get
         more information about the usage of the application.
         """
+        if invitations.enabled():
+            try:
+                email = invitations.normalize_email(claims.get("email"))
+            except ValidationError:
+                email = None
+            if email and AssistantRHInvitation.objects.filter(email=email).exists():
+                raise invitations.InvitationRequired({**claims, "email": email})
+        return self.create_oidc_user(claims)
+
+    def create_oidc_user(self, claims):
+        """Persist an OIDC identity using the normal profile defaults."""
         return super().create_user(
             claims
             | {

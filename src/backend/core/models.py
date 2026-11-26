@@ -580,3 +580,18 @@ class MinistryGrant(models.Model):
 
     def __str__(self):
         return f"{self.group}: {self.ministry}"
+
+
+class AssistantRHInvitation(BaseModel):
+    """Single-use admission of a new ProConnect identity to one RH group."""
+
+    email = models.EmailField(unique=True)
+    group = models.ForeignKey(auth_models.Group, on_delete=models.SET_NULL, null=True)
+    expires_at = models.DateTimeField()
+    accepted_at = models.DateTimeField(null=True, editable=False)
+    challenge_expires_at = models.DateTimeField(null=True, editable=False)
+    challenge_digest = models.CharField(max_length=64, blank=True, editable=False)
+    attempts = models.PositiveSmallIntegerField(default=0, editable=False)
+
+    def __str__(self):
+        return str(self.pk)

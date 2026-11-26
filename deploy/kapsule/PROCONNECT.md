@@ -89,3 +89,55 @@ migration de schéma n'est introduite par cette intégration.
 
 Les tests de recette utilisent le [FI de test officiel](https://partenaires.proconnect.gouv.fr/docs/fournisseur-service/identifiants-fi-test)
 avec une identité synthétique. Ne pas admettre de compte réel pendant la recette.
+
+## Préadmission par CSV et code de confirmation
+
+Le parcours est désactivé par défaut. Le hook Helm exécute `migrate --check`,
+y compris lorsque les invitations sont désactivées. Avant que Flux ne déploie
+le nouveau chart, utiliser l'image backend de la livraison et le rôle de
+migration de la base staging pour exécuter, dans cet ordre :
+
+```sh
+python manage.py migrate core 0017 --plan
+python manage.py migrate core 0017 --no-input
+python manage.py migrate --check --no-input
+```
+
+Vérifier que le plan correspond à la migration d'invitation avant de
+l'appliquer. Attendre que le dernier contrôle réussisse avant de laisser Flux
+réconcilier la livraison.
+
+Pour un pilote, configurer le backend mail Django avant d'activer
+`ASSISTANT_RH_INVITATIONS_ENABLED=true` avec les deux options RH et OIDC déjà
+actives. Garder `OIDC_CREATE_USER=true`. Renseigner
+`DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_FROM`,
+`DJANGO_EMAIL_HOST_USER` et `DJANGO_EMAIL_USE_TLS` ou
+`DJANGO_EMAIL_USE_SSL`, selon le fournisseur. Injecter
+`DJANGO_EMAIL_HOST_PASSWORD_FILE` depuis un secret monté. En intégration,
+utiliser des identités et des boîtes de test contrôlées pour la recette.
+
+Le fichier est en UTF-8 avec une seule colonne `email`. Le groupe Django
+doit posséder des `MinistryGrant` et être dépourvu de permissions Django.
+Traiter le CSV depuis un environnement d'administration autorisé.
+
+```sh
+python manage.py import_rh_invitations agents.csv --group "Corpus MASA"
+python manage.py import_rh_invitations agents.csv --group "Corpus MASA" --apply
+```
+
+La première commande affiche une prévisualisation par numéro de ligne. Les
+nouvelles invitations expirent après 30 jours. Pour renouveler une invitation
+expirée et inutilisée, ajouter `--renew-expired` à la prévisualisation, puis
+relancer avec les deux options `--renew-expired --apply`. Le renouvellement
+attribue le groupe fourni, prolonge l'invitation de 30 jours à compter du
+réimport et invalide les anciens codes. Les invitations en cours ou utilisées
+sont conservées.
+
+Le système envoie un code au premier retour
+ProConnect, valable dix minutes dans le navigateur d'origine et limité à cinq
+essais. Si l'envoi échoue, une nouvelle connexion permet de réessayer après
+une minute. Après confirmation, il relance le parcours ProConnect normal pour
+ouvrir la session du compte admis. Les comptes existants repérés à l'import
+restent dans le circuit de validation DGAFP. L'interrupteur désactive les
+nouvelles activations, et les comptes admis se gèrent avec les contrôles
+d'admission et d'habilitation habituels.
