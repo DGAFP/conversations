@@ -8,12 +8,12 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
-- ✨(auth) invite new ProConnect users from a CSV with email confirmation.
 - ✨(chat) add per-answer RH star ratings and detailed feedback.
 
 - Integrate upstream v0.0.28 while preserving RH authentication and sources.
 - Keep RH login forms usable under the new nonce-based security policy.
 - Preserve admin lockout protection in password-only RH deployments.
+- ✨(auth) invite new ProConnect users from a CSV with email confirmation.
 - Join upstream NUL-safe JSON fields with the applied RH migration history.
 
 - Integrate upstream v0.0.27 while retaining the RH security dependencies.

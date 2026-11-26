@@ -39,8 +39,6 @@ class OIDCAuthenticationCallbackView(LaSuiteOIDCAuthenticationCallbackView):
         try:
             return super().get(request)
         except invitations.InvitationRequired as exc:
-            for key in ("oidc_id_token", "oidc_access_token"):
-                request.session.pop(key, None)
             if not request.user.is_authenticated and invitations.start(request, exc.claims):
                 return redirect("assistant-rh-proconnect-confirm")
             return HttpResponseRedirect(f"{self.failure_url.rstrip('/')}{ACCESS_DENIED_PATH}")

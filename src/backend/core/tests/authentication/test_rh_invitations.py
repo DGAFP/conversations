@@ -17,6 +17,7 @@ from mozilla_django_oidc.auth import OIDCAuthenticationBackend as MozillaBackend
 from core.authentication import invitations
 from core.authentication.backends import OIDCAuthenticationBackend
 from core.factories import UserFactory
+from core.management.commands import import_rh_invitations
 from core.models import AssistantRHInvitation, MinistryGrant, User
 
 pytestmark = pytest.mark.django_db
@@ -68,6 +69,31 @@ def test_import_preview_apply_and_reimport(tmp_path, corpus_group):
     with pytest.raises(CommandError, match="line 3"):
         call_command("import_rh_invitations", csv_path, group=corpus_group.name, apply=True)
     assert AssistantRHInvitation.objects.count() == 1
+
+
+def test_import_uses_stable_order_and_reports_only_on_success(tmp_path, corpus_group, monkeypatch):
+    """Roll back the whole import without reporting individual successes after a failure."""
+    csv_path = tmp_path / "agents.csv"
+    csv_path.write_text("email\nb@example.org\na@example.org\n", encoding="utf-8")
+    report = StringIO()
+    visited = []
+    invitation_status = import_rh_invitations.invitation_status
+
+    def fail_second_address(email, group, **options):
+        visited.append(email)
+        if len(visited) == 2:
+            raise CommandError("Import interrupted")
+        return invitation_status(email, group, **options)
+
+    monkeypatch.setattr(import_rh_invitations, "invitation_status", fail_second_address)
+    with pytest.raises(CommandError, match="Import interrupted"):
+        call_command(
+            "import_rh_invitations", csv_path, group=corpus_group.name, apply=True, stdout=report
+        )
+
+    assert visited == ["a@example.org", "b@example.org"]
+    assert report.getvalue() == ""
+    assert not AssistantRHInvitation.objects.exists()
 
 
 @pytest.mark.parametrize("state", ["expired", "active", "used"])
@@ -132,11 +158,11 @@ def start_invitation(invite, rf, client):
     return mail.outbox[-1].body.split()[3].rstrip(".")
 
 
-def test_confirmation_checks_browser_csrf_and_replay(invite, settings, monkeypatch):
-    """Open an admitted session only after confirmation in the original browser."""
+@pytest.fixture(name="oidc_callback")
+def fixture_oidc_callback(invite, settings, monkeypatch):
+    """Run the callback with ProConnect's token exchange and UserInfo stubbed."""
     settings.LOGIN_REDIRECT_URL = "/"
     settings.LOGIN_REDIRECT_URL_FAILURE = "/"
-    client = Client(enforce_csrf_checks=True)
     monkeypatch.setattr(
         MozillaBackend,
         "get_token",
@@ -151,7 +177,7 @@ def test_confirmation_checks_browser_csrf_and_replay(invite, settings, monkeypat
         lambda *_: {"sub": "new-proconnect-sub", "email": invite.email},
     )
 
-    def callback(state):
+    def callback(client, state):
         session = client.session
         session["oidc_states"] = {state: {"nonce": "test-nonce", "code_verifier": "verifier"}}
         session.save()
@@ -159,8 +185,14 @@ def test_confirmation_checks_browser_csrf_and_replay(invite, settings, monkeypat
             reverse("oidc_authentication_callback"), {"code": "oidc-code", "state": state}
         )
 
+    return callback
+
+
+def test_confirmation_checks_browser_csrf_and_replay(invite, oidc_callback):
+    """Open an admitted session only after confirmation in the original browser."""
+    client = Client(enforce_csrf_checks=True)
     url = reverse("assistant-rh-proconnect-confirm")
-    assert callback("first-state").url == url
+    assert oidc_callback(client, "first-state").url == url
     assert "oidc_id_token" not in client.session
     assert "_auth_user_id" not in client.session
     code = mail.outbox[-1].body.split()[3].rstrip(".")
@@ -185,9 +217,27 @@ def test_confirmation_checks_browser_csrf_and_replay(invite, settings, monkeypat
     assert list(user.groups.all()) == [invite.group]
     assert client.post(url, {"code": code}, HTTP_X_CSRFTOKEN=csrf).url == resume
     assert User.objects.filter(email=invite.email).count() == 1
-    assert callback("second-state").url == "/"
+    assert oidc_callback(client, "second-state").url == "/"
     assert client.session["_auth_user_id"] == str(user.pk)
     assert client.session["oidc_id_token"] == "test-id-token"
+
+
+def test_invitation_callback_preserves_active_session_tokens(client, settings, oidc_callback):
+    """Keep the active account's OIDC tokens when a new identity needs an invitation."""
+    settings.OIDC_STORE_ACCESS_TOKEN = True
+    user = UserFactory(assistant_rh_admitted=True)
+    client.force_login(user, backend="core.authentication.backends.OIDCAuthenticationBackend")
+    session = client.session
+    session["oidc_id_token"] = "active-id-token"
+    session["oidc_access_token"] = "active-access-token"
+    session.save()
+
+    assert oidc_callback(client, "invited-state").url == "/unauthorized/"
+    session = client.session
+    assert session["_auth_user_id"] == str(user.pk)
+    assert session["oidc_id_token"] == "active-id-token"
+    assert session["oidc_access_token"] == "active-access-token"
+    assert invitations.SESSION_KEY not in session
 
 
 @pytest.mark.parametrize("blocker", ["attempts", "expiry", "existing_local", "group"])

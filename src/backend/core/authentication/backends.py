@@ -36,6 +36,18 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
     in the User and Identity models, and handles signed and/or encrypted UserInfo response.
     """
 
+    def store_tokens(self, access_token, id_token):
+        """With invitations enabled, defer storage until the identity has been admitted."""
+        if not invitations.enabled():
+            super().store_tokens(access_token, id_token)
+
+    def get_or_create_user(self, access_token, id_token, payload):
+        """Preserve the current session's tokens when a different identity is refused."""
+        user = super().get_or_create_user(access_token, id_token, payload)
+        if user is not None and invitations.enabled():
+            super().store_tokens(access_token, id_token)
+        return user
+
     def verify_token(self, token, **kwargs):
         """Keep upstream signature/nonce verification and enforce the RH token audience."""
         try:

@@ -89,22 +89,29 @@ class Command(BaseCommand):
             raise CommandError(f"Could not read CSV: {exc}") from exc
         return emails
 
-    @transaction.atomic
     def handle(self, *args, **options):
         emails = self.read_emails(options["csv_path"])
-        group = eligible_groups().filter(name=options["group"]).first()
-        if group is None:
-            raise CommandError("Select a group with RH corpus grants and no Django permissions.")
+        with transaction.atomic():
+            group = eligible_groups().filter(name=options["group"]).first()
+            if group is None:
+                raise CommandError(
+                    "Select a group with RH corpus grants and no Django permissions."
+                )
 
-        now = timezone.now()
+            now = timezone.now()
+            # Every import acquires row locks in the same order, regardless of CSV order.
+            statuses = {
+                email: invitation_status(
+                    email,
+                    group,
+                    now=now,
+                    apply=options["apply"],
+                    renew_expired=options["renew_expired"],
+                )
+                for email in sorted(emails)
+            }
+
         for email, lines in emails.items():
-            status = invitation_status(
-                email,
-                group,
-                now=now,
-                apply=options["apply"],
-                renew_expired=options["renew_expired"],
-            )
-            self.stdout.write(f"Line {lines[0]}: {status}")
+            self.stdout.write(f"Line {lines[0]}: {statuses[email]}")
             for line in lines[1:]:
                 self.stdout.write(f"Line {line}: duplicate of line {lines[0]}")
