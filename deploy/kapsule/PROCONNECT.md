@@ -107,14 +107,23 @@ Vérifier que le plan correspond à la migration d'invitation avant de
 l'appliquer. Attendre que le dernier contrôle réussisse avant de laisser Flux
 réconcilier la livraison.
 
-Pour un pilote, configurer le backend mail Django avant d'activer
-`ASSISTANT_RH_INVITATIONS_ENABLED=true` avec les deux options RH et OIDC déjà
-actives. Garder `OIDC_CREATE_USER=true`. Renseigner
-`DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_FROM`,
-`DJANGO_EMAIL_HOST_USER` et `DJANGO_EMAIL_USE_TLS` ou
-`DJANGO_EMAIL_USE_SSL`, selon le fournisseur. Injecter
-`DJANGO_EMAIL_HOST_PASSWORD_FILE` depuis un secret monté. En intégration,
-utiliser des identités et des boîtes de test contrôlées pour la recette.
+Pour un pilote, synchroniser le secret Scaleway TEM préparé dans
+`DGAFP/assistant-rh#647` avant d'activer `ASSISTANT_RH_INVITATIONS_ENABLED=true`
+(avec les options RH et OIDC déjà actives et `OIDC_CREATE_USER=true`). La
+configuration publique staging est déjà présente dans `staging.yaml` :
+`DJANGO_EMAIL_BACKEND=core.mail.ScalewayTEMEmailBackend`,
+`DJANGO_EMAIL_FROM`, `SCW_TEM_PROJECT_ID` et `SCW_TEM_REGION=fr-par`.
+
+Le script `sync-tem.py --kubeconfig <staging>` vérifie le cluster staging et lit
+`conversations-tem-secret-key` dans Scaleway Secret Manager
+(`/assistant-rh/staging/runtime`) sans afficher sa valeur. `--apply` synchronise
+uniquement le Secret Kubernetes `conversations-tem` (`SCW_TEM_SECRET_KEY`) via
+stdin et server-side apply (`SCW_TEM_SECRET_KEY_FILE` est aussi supporté pour un
+secret monté en fichier). Tant que ce Secret n'est pas synchronisé, la référence
+`optional: true` dans `staging.yaml` évite tout blocage des déploiements ; après
+création ou rotation de la clé, relancer `sync-tem.py --apply` puis redémarrer
+les workloads `conversations-backend`. En intégration, utiliser des identités et
+des boîtes de test contrôlées pour la recette.
 
 Le fichier est en UTF-8 avec une seule colonne `email`. Le groupe Django
 doit posséder des `MinistryGrant` et être dépourvu de permissions Django.

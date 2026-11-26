@@ -41,6 +41,13 @@ class PackageTest(unittest.TestCase):
                 self.assertEqual(env["LOGIN_REDIRECT_URL"], "/")
                 self.assertEqual(env["LOGOUT_REDIRECT_URL"], "/")
                 self.assertEqual(env["FEATURE_FLAG_DOCUMENT_UPLOAD"], "DISABLED")
+                self.assertEqual(env["DJANGO_EMAIL_BACKEND"], "core.mail.ScalewayTEMEmailBackend")
+                self.assertEqual(env["SCW_TEM_REGION"], "fr-par")
+                self.assertIn("staging.assistant-rh.beta.gouv.fr", env["DJANGO_EMAIL_FROM"])
+                self.assertIn(
+                    {"secretRef": {"name": "conversations-tem", "optional": True}},
+                    values["backend"]["envFrom"],
+                )
                 self.assertFalse(values["backend"]["celeryBeat"]["enabled"])
                 workers = values["backend"]["celeryWorkers"]
                 self.assertEqual(len(workers), 1)

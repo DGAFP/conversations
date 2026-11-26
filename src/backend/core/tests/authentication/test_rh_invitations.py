@@ -1,5 +1,6 @@
 """Assistant RH invitation import and confirmation."""
 
+import json
 from datetime import timedelta
 from io import StringIO
 
@@ -10,7 +11,9 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+import httpx
 import pytest
+import respx
 from lasuite.oidc_login.backends import OIDCAuthenticationBackend as SuiteBackend
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend as MozillaBackend
 
@@ -291,3 +294,52 @@ def test_mail_failure_allows_retry_after_short_cooldown(invite, rf, client, monk
     )
     assert invitations.start(request, claims)
     assert mail.outbox[-1].to == [invite.email]
+
+
+@respx.mock
+def test_scaleway_tem_failure_keeps_invitation_pending_and_allows_retry(
+    invite, settings, rf, client
+):
+    """Keep invitation pending on TEM API error and succeed on retry after cooldown."""
+    settings.EMAIL_BACKEND = "core.mail.ScalewayTEMEmailBackend"
+    settings.EMAIL_FROM = "Assistant RH <ne-pas-repondre@staging.assistant-rh.beta.gouv.fr>"
+    settings.SCW_TEM_API_URL = "https://api.scaleway.com"
+    settings.SCW_TEM_REGION = "fr-par"
+    settings.SCW_TEM_PROJECT_ID = "c1d3f629-d08d-439d-ba76-f115ea06e579"
+    settings.SCW_TEM_SECRET_KEY = "00000000-0000-0000-0000-000000000001"
+    endpoint = "https://api.scaleway.com/transactional-email/v1alpha1/regions/fr-par/emails"
+    route = respx.post(endpoint).mock(
+        side_effect=[
+            httpx.Response(503, json={"message": "temporary outage"}),
+            httpx.Response(200, json={"emails": [{"id": "tem-1", "status": "sending"}]}),
+        ]
+    )
+
+    request = rf.get("/")
+    request.session = client.session
+    claims = {"sub": "new-proconnect-sub", "email": invite.email}
+    assert not invitations.start(request, claims)
+    invite.refresh_from_db()
+    assert invite.accepted_at is None
+    assert not invite.challenge_digest
+    assert invitations.SESSION_KEY not in request.session
+
+    AssistantRHInvitation.objects.filter(pk=invite.pk).update(
+        challenge_expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    assert invitations.start(request, claims)
+    assert route.call_count == 2
+    payload = json.loads(route.calls.last.request.content)
+    assert payload["to"] == [{"email": invite.email}]
+    assert payload["from"] == {
+        "email": "ne-pas-repondre@staging.assistant-rh.beta.gouv.fr",
+        "name": "Assistant RH",
+    }
+    code = payload["text"].split()[3].rstrip(".")
+    assert invitations.confirm(
+        request.session[invitations.SESSION_KEY],
+        code,
+        OIDCAuthenticationBackend().create_oidc_user,
+    )
+    invite.refresh_from_db()
+    assert invite.accepted_at is not None

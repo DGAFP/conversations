@@ -14,6 +14,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare, salted_hmac
 
+from core.mail import ScalewayTEMError
 from core.models import AssistantRHInvitation, User
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ def start(request, claims):
             [invitation.email],
             connection=get_connection(timeout=10),
         )
-    except OSError:
+    except OSError, ScalewayTEMError:
         sent = 0
     if sent != 1:
         logger.warning("Assistant RH invitation email could not be sent (%s)", invitation.pk)
