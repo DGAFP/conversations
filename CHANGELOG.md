@@ -8,6 +8,7 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- Recognize missing ORAS manifests when publishing a first release image.
 - Deliver Kapsule releases through protected RC/stable tags, preserving image
   digests with observed Flux/recipe proof and serialized recovery.
 - Update dnspython and Soup Sieve to clear the staging security scan.
