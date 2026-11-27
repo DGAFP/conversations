@@ -5,6 +5,7 @@ import copy
 import hashlib
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,6 +41,28 @@ def manifest(tag="v0.1.0-rc.1", target="staging"):
 
 
 class ReleaseTest(unittest.TestCase):
+    @patch.object(delivery.subprocess, "run")
+    def test_oras_missing_manifest_is_distinct_from_auth_and_transport_errors(self, run):
+        reference = delivery.STAGING_REGISTRY + "/conversations-backend:release-v0.0.29-rc.1"
+        missing = (
+            "Error response from registry: failed to resolve digest: " + reference + ": not found"
+        )
+        with patch.dict(os.environ, {"TARGET_REGISTRY_CONFIG": "/private/config.json"}):
+            run.return_value = subprocess.CompletedProcess([], 1, "", missing + "\n")
+            self.assertIsNone(delivery.existing_digest(reference))
+            for error in [
+                "unauthorized: HTTP 401",
+                "denied: HTTP 403",
+                "dial tcp: lookup registry: not found",
+                missing.replace(reference, "another/reference"),
+                "gateway failed: HTTP 404",
+            ]:
+                run.return_value = subprocess.CompletedProcess([], 1, "", error)
+                with self.subTest(error=error), self.assertRaises(RuntimeError):
+                    delivery.existing_digest(reference)
+            run.return_value = subprocess.CompletedProcess([], 0, DIGEST + "\n", "")
+            self.assertEqual(delivery.existing_digest(reference), DIGEST)
+
     @patch.object(delivery, "api")
     def test_successful_recovery_resolves_the_full_failed_deployment_chain(self, api):
         def response(path, data=None):
