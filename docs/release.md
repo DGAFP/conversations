@@ -1,5 +1,14 @@
 # Releasing a new version
 
+## DGAFP deployment
+
+DGAFP integrates changes into `main` and deploys through protected tags:
+`vX.Y.Z-rc.N` for staging, then `vX.Y.Z` on the exact same commit and image
+digests for production. A merge alone only runs CI. See the
+[Kapsule delivery procedure](../deploy/README.md) for validation, promotion,
+recovery and activation prerequisites. Production stays disabled until its
+dedicated environment is provisioned.
+
 ## DGAFP upstream updates
 
 Upstream updates target `main`. The sync job reads upstream tags from
@@ -15,6 +24,9 @@ changes and validate the resulting tree before merging. A merge on `main` does
 not publish Kapsule images or trigger its staging deployment.
 
 ## Upstream release procedure
+
+The remaining instructions describe the upstream project's Docker Hub/ArgoCD
+deployment, not the DGAFP Kapsule target.
 
 Whenever we are cooking a new release (e.g. `4.18.1`), we should follow the standard procedure described below:
 
