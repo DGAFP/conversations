@@ -17,6 +17,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from itertools import islice
 from pathlib import PurePath
 from typing import Literal
 
@@ -305,14 +306,17 @@ def _decode(content: bytes) -> str:
 def _read_csv(content: bytes) -> tuple[list[list], tuple[str, ...]]:
     """Read CSV rows, detecting separators outside quoted fields."""
     text = _decode(content)
-    try:
-        delimiter = csv.Sniffer().sniff(text[:8192], delimiters="".join(CSV_DELIMITERS)).delimiter
-    except csv.Error:
-        # Uneven rows still load; compare parsed headers, including quoted newlines.
-        delimiter = max(
-            CSV_DELIMITERS,
-            key=lambda separator: len(next(csv.reader(io.StringIO(text), delimiter=separator), [])),
-        )
+
+    def delimiter_score(separator):
+        reader = csv.reader(io.StringIO(text), delimiter=separator)
+        width = len(next(reader, []))
+        if width < 2:
+            return (False, 0, width)
+        sample = [len(row) for row in islice(reader, 20) if row]
+        consistency = sum(size == width for size in sample) / (len(sample) or 1)
+        return (True, consistency, width)
+
+    delimiter = max(CSV_DELIMITERS, key=delimiter_score)
     rows = [
         [_normalize_cell(cell) for cell in row]
         for row in csv.reader(io.StringIO(text), delimiter=delimiter)
