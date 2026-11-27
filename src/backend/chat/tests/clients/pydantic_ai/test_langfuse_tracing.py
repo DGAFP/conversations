@@ -15,7 +15,8 @@ from chat.clients.pydantic_ai import AIAgentService
 from chat.factories import ChatConversationFactory
 from chat.tests.utils import stream_text
 
-pytestmark = pytest.mark.django_db()
+# Async database writes use a separate connection that needs transactional cleanup.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture(name="langfuse_client", scope="module")

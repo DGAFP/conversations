@@ -12,7 +12,8 @@ from chat.clients.pydantic_ai import AIAgentService
 from chat.factories import ChatConversationFactory, UserFactory
 from chat.llm_configuration import LLModel, LLMProvider, LLMSettings
 
-pytestmark = pytest.mark.django_db()
+# Async database writes use a separate connection that needs transactional cleanup.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture(autouse=True, name="mock_self_documentation_loader")

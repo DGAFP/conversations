@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
-"""Open one pull request for the oldest upstream release missing from staging."""
+"""Open one pull request for the oldest upstream release missing from main."""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 UPSTREAM_REPOSITORY = "suitenumerique/conversations"
-BASE_BRANCH = "staging"
+BASE_BRANCH = "main"
 BRANCH_PREFIX = "upstream-release/"
+UPSTREAM_TAGS = "refs/upstream/tags/"
+IMPORTED_RELEASE = Path(__file__).with_name("upstream-release.json")
 
 logger = logging.getLogger(__name__)
 
@@ -80,17 +84,32 @@ def list_published_releases() -> list[Release]:
 
 
 def is_release_integrated(tag_name: str) -> bool:
-    """A release is integrated when its tagged commit is an ancestor of staging."""
+    """Accept preserved ancestry or an explicitly recorded signed snapshot import."""
+    if is_ancestor(f"{UPSTREAM_TAGS}{tag_name}^{{commit}}", f"origin/{BASE_BRANCH}"):
+        return True
+    if not IMPORTED_RELEASE.exists():
+        return False
+    imported = json.loads(IMPORTED_RELEASE.read_text())
+    commit = imported["commit"]
+    if not re.fullmatch(r"[a-f0-9]{40}", commit):
+        raise RuntimeError("Invalid imported upstream commit")
+    actual = git("rev-parse", f"{UPSTREAM_TAGS}{imported['tag']}^{{commit}}").stdout.strip()
+    if actual != commit:
+        raise RuntimeError("Imported upstream tag does not match its recorded commit")
+    return is_ancestor(f"{UPSTREAM_TAGS}{tag_name}^{{commit}}", commit)
+
+
+def is_ancestor(reference: str, baseline: str) -> bool:
     result = git(
         "merge-base",
         "--is-ancestor",
-        f"{tag_name}^{{commit}}",
-        f"origin/{BASE_BRANCH}",
+        reference,
+        baseline,
         check=False,
     )
     if result.returncode not in (0, 1):
         details = result.stderr.strip() or result.stdout.strip()
-        raise RuntimeError(f"Could not inspect release {tag_name}: {details}")
+        raise RuntimeError(f"Could not inspect release {reference}: {details}")
     return result.returncode == 0
 
 
@@ -120,7 +139,7 @@ def merge_upstream_release(tag_name: str) -> list[str]:
         "merge",
         "--no-ff",
         "--no-edit",
-        f"{tag_name}^{{commit}}",
+        f"{UPSTREAM_TAGS}{tag_name}^{{commit}}",
         check=False,
     )
     if result.returncode == 0:
@@ -132,7 +151,7 @@ def merge_upstream_release(tag_name: str) -> list[str]:
             f"Merge of upstream release {tag_name} failed without conflicts:\n{details}"
         )
     git("merge", "--abort")
-    git("reset", "--hard", f"{tag_name}^{{commit}}")
+    git("reset", "--hard", f"{UPSTREAM_TAGS}{tag_name}^{{commit}}")
     return conflicted_paths
 
 
@@ -157,7 +176,7 @@ def main() -> int:
 
     upstream_url = f"https://github.com/{UPSTREAM_REPOSITORY}.git"
     git("remote", "add", "upstream", upstream_url)
-    git("fetch", "--tags", "upstream", "main")
+    git("fetch", "--no-tags", "upstream", f"refs/tags/*:{UPSTREAM_TAGS}*")
     git("fetch", "origin", BASE_BRANCH)
 
     release = find_next_missing_release(
@@ -196,8 +215,9 @@ def main() -> int:
     title = f"chore: merge upstream release {release.tag_name}"
     body = (
         f"Merges upstream release [{release.tag_name}]({release_url}).\n\n"
-        "Merge with a merge commit, not squash or rebase, so subsequent runs "
-        "can detect the integrated release."
+        "Preserve upstream ancestry with a merge commit. If signed-commit rules "
+        "require a snapshot instead, record the imported tag and its commit in "
+        "`.github/scripts/upstream-release.json` and validate the final tree."
     )
     if conflicted_paths:
         conflicted_file_list = "\n".join(f"- `{path}`" for path in conflicted_paths)
@@ -217,8 +237,8 @@ def main() -> int:
             "# resolve the conflicts, then commit the merge\n"
             "git push\n"
             "```\n\n"
-            "Merge with a merge commit, not squash or rebase, so subsequent "
-            "runs can detect the integrated release."
+            "Preserve upstream ancestry, or record a verified snapshot import in "
+            "`.github/scripts/upstream-release.json` before merging into main."
         )
     pull_request_url = gh(
         "pr",
