@@ -49,6 +49,10 @@ import {
   KEY_LIST_PROJECT,
   ProjectsResponse,
 } from '@/features/chat/api/useProjects';
+import {
+  AssistantRHSources,
+  assistantRHSources,
+} from '@/features/chat/components/AssistantRHSources';
 import { ChatError, ChatErrorType } from '@/features/chat/components/ChatError';
 import { ImageProcessingUnavailableBanner } from '@/features/chat/components/ImageProcessingUnavailableBanner';
 import { InputChat } from '@/features/chat/components/InputChat';
@@ -80,6 +84,11 @@ const PROVIDER_ERROR_CODES = new Set<ChatErrorType>([
 ]);
 
 const IMAGES_BANNER_STORAGE_PREFIX = 'conversations:images-banner-dismissed:';
+
+// How often a conversation left mid-answer is re-read while the backend still
+// reports the turn as running. Each poll is a full snapshot, so this trades a
+// few seconds of staleness against the cost of refetching the message list.
+export const REMOTE_STREAM_POLL_MS = 3000;
 
 const imagesBannerStorageKey = (conversationId: string) =>
   `${IMAGES_BANNER_STORAGE_PREFIX}${conversationId}`;
@@ -197,6 +206,10 @@ export const Chat = ({
   const [conversationProjectId, setConversationProjectId] = useState<
     string | null
   >(null);
+  // A turn this client is not streaming is still running server-side: it was
+  // left mid-answer. The snapshot then holds a checkpoint that is neither final
+  // nor live, so poll until the backend says the turn is over.
+  const [isRemotelyStreaming, setIsRemotelyStreaming] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -466,6 +479,7 @@ export const Chat = ({
 
   // Précharger les métadonnées des sources dès que les messages arrivent
   useEffect(() => {
+    if (config?.ASSISTANT_RH_ENABLED) return;
     messages.forEach((message) => {
       if (message.parts) {
         const sourceParts = message.parts.filter(
@@ -510,8 +524,15 @@ export const Chat = ({
     );
   }, [isSourceOpen, messages]);
 
+  const selectedSourceMessage = messages.find(
+    (message) => message.id === isSourceOpen,
+  );
+  const selectedSourceCount = config?.ASSISTANT_RH_ENABLED
+    ? assistantRHSources(selectedSourceMessage).length
+    : selectedSourceParts.length;
   const isSourcesPanelOpen =
-    Boolean(isSourceOpen) && selectedSourceParts.length > 0;
+    Boolean(selectedSourceMessage) &&
+    (Boolean(config?.ASSISTANT_RH_ENABLED) || selectedSourceParts.length > 0);
 
   const sourcesPanelContent = isSourcesPanelOpen ? (
     <Box
@@ -532,8 +553,8 @@ export const Chat = ({
         $margin={{ all: 'xs', left: 'sm' }}
       >
         <Text as="h2" $size="lg" $weight="700">
-          {selectedSourceParts.length}{' '}
-          {selectedSourceParts.length > 1 ? t('Sources') : t('Source')}
+          {selectedSourceCount > 0 ? `${selectedSourceCount} ` : ''}
+          {selectedSourceCount === 1 ? t('Source') : t('Sources')}
         </Text>
         <Button
           color="neutral"
@@ -554,7 +575,11 @@ export const Chat = ({
         />
       </Box>
       <HorizontalSeparator $withPadding={false} />
-      <SourceItemList parts={selectedSourceParts} getMetadata={getMetadata} />
+      {config?.ASSISTANT_RH_ENABLED ? (
+        <AssistantRHSources message={selectedSourceMessage} />
+      ) : (
+        <SourceItemList parts={selectedSourceParts} getMetadata={getMetadata} />
+      )}
     </Box>
   ) : null;
 
@@ -836,6 +861,7 @@ export const Chat = ({
       setMessages([]);
     }
     setImagesSkipped(false);
+    setIsRemotelyStreaming(false);
     // Drop the previous conversation's project so its indexing gate can't leak
     // into this one; the getConversation() success below repopulates it. Skip
     // the reset while a pending first message is creating this conversation: the
@@ -876,6 +902,7 @@ export const Chat = ({
             // two lands first.
             if (!hasSentRef.current) {
               setMessages(conversation.messages);
+              setIsRemotelyStreaming(conversation.is_streaming ?? false);
             }
             setConversationMinistry(conversation.ministry ?? null);
             setImagesSkipped(conversation.images_skipped ?? false);
@@ -903,6 +930,42 @@ export const Chat = ({
     // Only run when initialConversationId or pendingInput changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConversationId, pendingInput]);
+
+  // Follow a turn that runs without us until the backend stops reporting it,
+  // then show what it stored. Each poll reads the same snapshot the load path
+  // does, so the wait ends by delivering the finished answer.
+  useEffect(() => {
+    if (!isRemotelyStreaming || !initialConversationId) {
+      return;
+    }
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const conversation = await getConversation({
+          id: initialConversationId,
+        });
+        if (stopped) {
+          return;
+        }
+        // Sent into meanwhile: the client is authoritative again, and its own
+        // stream reports itself.
+        if (hasSentRef.current) {
+          setIsRemotelyStreaming(false);
+          return;
+        }
+        setMessages(conversation.messages);
+        setIsRemotelyStreaming(conversation.is_streaming ?? false);
+      } catch {
+        // A failed poll is not an answer: keep waiting rather than call the
+        // turn finished on a network blip.
+      }
+    };
+    const timer = window.setInterval(() => void poll(), REMOTE_STREAM_POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [isRemotelyStreaming, initialConversationId, setMessages]);
 
   const dismissImagesBanner = useCallback(() => {
     setImagesBannerDismissed(true);
@@ -1161,6 +1224,7 @@ export const Chat = ({
                       streamingMessageHeight={streamingMessageHeight}
                       status={status}
                       chatErrorType={chatErrorType}
+                      isConversationStreaming={isRemotelyStreaming}
                       onRetry={handleRetry}
                       conversationId={conversationId}
                       isSourceOpen={isSourceOpen}
@@ -1197,7 +1261,10 @@ export const Chat = ({
         )}
         {!aprilFools.isActive &&
         ((status !== 'ready' && status !== 'streaming' && status !== 'error') ||
-          isUploadingFiles) ? (
+          isUploadingFiles ||
+          // A turn running without us is the same thing to the reader as one
+          // of ours that has not started answering: something is coming.
+          isRemotelyStreaming) ? (
           <Box
             $direction="row"
             $align="start"
@@ -1252,7 +1319,11 @@ export const Chat = ({
           input={input}
           handleInputChange={handleInputChange}
           handleSubmit={handleSubmitWrapper}
-          status={status}
+          // A turn running without us is a turn in progress as far as the
+          // composer is concerned: Stop rather than Send, and no second
+          // question on top of the one being answered. Stop reaches it, since
+          // it is the backend that is asked to stop, not our own stream.
+          status={isRemotelyStreaming ? 'streaming' : status}
           files={files}
           onScrollToBottom={scrollToBottom}
           setFiles={setFiles}

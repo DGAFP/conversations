@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if confirmed %}
+    <meta http-equiv="refresh" content="0;url={% url 'assistant-rh-proconnect-login' %}">
+  {% endif %}
+  <title>Activer votre accès | Assistant RH</title>
+</head>
+<body>
+  <main>
+    <h1>Activer votre accès à l’Assistant RH</h1>
+    {% if confirmed %}
+      <p>Votre accès est activé.</p>
+    {% else %}
+      <p>Saisissez le code reçu sur votre adresse professionnelle.</p>
+      {% if invalid_code %}
+        <p role="alert">Ce code est incorrect ou a expiré.</p>
+      {% endif %}
+      <form method="post">
+        {% csrf_token %}
+        <label for="code">Code de confirmation</label>
+        <input id="code" name="code" type="text" required maxlength="12"
+               autocomplete="one-time-code" autocapitalize="none" spellcheck="false">
+        <button type="submit">Activer mon accès</button>
+      </form>
+    {% endif %}
+    <p><a href="{% url 'assistant-rh-proconnect-login' %}">Reprendre la connexion avec ProConnect</a></p>
+  </main>
+</body>
+</html>

@@ -10,8 +10,9 @@ import { useNavigate } from 'react-router';
 import { css } from 'styled-components';
 
 import NewChatIcon from '@/assets/icons/new-message-bold.svg?react';
-import LogoAssistant from '@/assets/logo/logomark.svg?react';
+import LogoAssistant from '@/assets/logo/logo-assistant.svg?react';
 import { Box } from '@/components/';
+import { productName } from '@/core';
 import { useCunninghamTheme } from '@/cunningham';
 import { useChatScroll } from '@/features/chat/hooks';
 import { useChatPreferencesStore } from '@/features/chat/stores/useChatPreferencesStore';
@@ -88,7 +89,11 @@ export const Header = () => {
           </Box>
         )}
         {!isDesktop && !hasConversationIdInRoute && (
-          <LogoAssistant height="32px" width="auto" />
+          <LogoAssistant
+            aria-label={t('{{productName}} Logo', { productName })}
+            height="32px"
+            width="auto"
+          />
         )}
       </Box>
       {!isDesktop ? (

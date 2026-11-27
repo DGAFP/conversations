@@ -1,5 +1,6 @@
 /* eslint-disable testing-library/no-unnecessary-act, @typescript-eslint/require-await */
 import { CunninghamProvider } from '@gouvfr-lasuite/cunningham-react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Suspense } from 'react';
@@ -12,6 +13,11 @@ import {
   splitIntoBlocks,
   splitStreamingContent,
 } from '../MessageItem';
+
+vi.mock('react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router')>()),
+  useNavigate: () => vi.fn(),
+}));
 
 const TEST_CO2_IMPACT_KG = 0.00002191613089507352;
 
@@ -30,13 +36,19 @@ vi.mock('rehype-katex', () => ({ default: () => {} }));
 vi.mock('remark-gfm', () => ({ default: () => {} }));
 vi.mock('remark-math', () => ({ default: () => {} }));
 
+// lottie-web polls `document.readyState` on an interval once imported; if the
+// file ends first, the tick fires after jsdom teardown and fails the run.
+vi.mock('lottie-react', () => ({ Lottie: () => null }));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
 }));
 
-const mockConfig: { DOCS_BASE_URL?: string } = { DOCS_BASE_URL: undefined };
+const mockConfig: { DOCS_BASE_URL?: string; ASSISTANT_RH_ENABLED?: boolean } = {
+  DOCS_BASE_URL: undefined,
+};
 vi.mock('@/core/config', () => ({
   useConfig: () => ({ data: mockConfig }),
 }));
@@ -73,6 +85,12 @@ vi.mock('../SourceItemList', () => ({
 
 vi.mock('../ToolInvocationItem', () => ({
   ToolInvocationItem: () => <div data-testid="tool-invocation-item" />,
+}));
+
+vi.mock('../TruncatedResponseMessage', () => ({
+  TruncatedResponseMessage: () => (
+    <div data-testid="truncated-response-message" />
+  ),
 }));
 
 describe('splitIntoBlocks', () => {
@@ -405,6 +423,161 @@ describe('MessageItem', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockConfig.DOCS_BASE_URL = undefined;
+    mockConfig.ASSISTANT_RH_ENABLED = false;
+  });
+
+  describe('RH source panel action', () => {
+    const documentPath = '/api/v1.0/chats/chat-1/messages/msg-1/sources/0/';
+    const articleUrl =
+      'https://www.service-public.fr/particuliers/vosdroits/F1';
+    const answer = 'Réponse avec sa citation dans le texte.';
+    const text = `${answer}\n\n---\n**Sources :**\n1. Guide RH\n2. Article public`;
+    const rhMessage = {
+      ...defaultProps.message,
+      parts: [{ type: 'text' as const, text }],
+      metadata: {
+        assistant_rh: {
+          sources: [
+            {
+              title: 'Guide RH',
+              publisher: 'DGAFP',
+              url: documentPath,
+              access: 'authenticated',
+            },
+            {
+              title: 'Article public',
+              publisher: 'Service-Public',
+              url: articleUrl,
+              access: 'public',
+            },
+          ],
+        },
+      },
+    };
+
+    it('opens the panel for RH sources without duplicating them under the answer', async () => {
+      mockConfig.ASSISTANT_RH_ENABLED = true;
+      const onOpenSources = vi.fn();
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={rhMessage}
+            onOpenSources={onOpenSources}
+          />,
+        );
+      });
+      expect(await screen.findByTestId('markdown-content')).toHaveTextContent(
+        answer,
+      );
+      expect(screen.getByTestId('markdown-content')).not.toHaveTextContent(
+        'Sources :',
+      );
+      expect(
+        screen.queryByRole('heading', { name: 'Sources' }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Show 2 sources' }),
+      );
+      expect(onOpenSources).toHaveBeenCalledWith('msg-1');
+      expect(rhMessage.parts[0].text).toBe(text);
+    });
+
+    it('updates the source count when authoritative metadata arrives', async () => {
+      mockConfig.ASSISTANT_RH_ENABLED = true;
+      const { rerender } = renderWithProviders(
+        <MessageItem
+          {...defaultProps}
+          message={{ ...rhMessage, metadata: undefined }}
+        />,
+      );
+      expect(
+        screen.getByRole('button', { name: 'Show sources' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('assistant-message-content')).toHaveTextContent(
+        'Sources :',
+      );
+      rerender(
+        withProviders(<MessageItem {...defaultProps} message={rhMessage} />),
+      );
+      expect(
+        screen.getByRole('button', { name: 'Show 2 sources' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('markdown-content')).not.toHaveTextContent(
+        'Sources :',
+      );
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    });
+
+    it('shows the source action when streaming finishes', async () => {
+      mockConfig.ASSISTANT_RH_ENABLED = true;
+      const { rerender } = renderWithProviders(
+        <MessageItem
+          {...defaultProps}
+          message={rhMessage}
+          isLastAssistantMessage
+          status="streaming"
+        />,
+      );
+      expect(
+        screen.queryByRole('button', { name: /Show.*sources/ }),
+      ).not.toBeInTheDocument();
+      rerender(
+        withProviders(
+          <MessageItem
+            {...defaultProps}
+            message={rhMessage}
+            isLastAssistantMessage
+            status="ready"
+          />,
+        ),
+      );
+      expect(
+        screen.getByRole('button', { name: 'Show 2 sources' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    });
+
+    it('offers to hide the panel for the selected answer', async () => {
+      mockConfig.ASSISTANT_RH_ENABLED = true;
+      const onOpenSources = vi.fn();
+      renderWithProviders(
+        <MessageItem
+          {...defaultProps}
+          message={rhMessage}
+          isSourceOpen="msg-1"
+          onOpenSources={onOpenSources}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Hide sources' }),
+      );
+      expect(onOpenSources).toHaveBeenCalledWith('msg-1');
+    });
+
+    it('keeps the source panel action outside RH mode', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              parts: [
+                ...defaultProps.message.parts,
+                { type: 'source-url', sourceId: '1', url: articleUrl },
+              ],
+            }}
+          />,
+        );
+      });
+      expect(
+        screen.getByRole('button', { name: 'Show 1 source' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Sources' }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe('Edit in Docs button', () => {
@@ -484,6 +657,44 @@ describe('MessageItem', () => {
       expect(
         screen.queryByRole('button', { name: 'Copy' }),
       ).not.toBeInTheDocument();
+    });
+
+    it('does not render copy button while the turn runs without us', async () => {
+      // After a reload mid-answer the client only polls, so its own status
+      // reads "ready" while the backend is still producing the answer.
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            status="ready"
+            isLastMessage={true}
+            isLastAssistantMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(
+        screen.queryByRole('button', { name: 'Copy' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('keeps the copy button on the previous answer while the turn runs without us', async () => {
+      // Reloaded before the model wrote anything: the question is the last
+      // message, and the last assistant message is the finished answer before it.
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            status="ready"
+            isLastMessage={false}
+            isLastAssistantMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
     });
 
     it('does not render the action bar before the answer has content', async () => {
@@ -697,7 +908,141 @@ describe('MessageItem', () => {
     });
   });
 
+  describe('interrupted answers', () => {
+    it('flags an answer the backend stored as interrupted', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+          />,
+        );
+      });
+
+      expect(screen.getByTestId('interrupted-answer')).toBeInTheDocument();
+    });
+
+    it('does not flag the answer a turn running without us is still writing', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+            isLastMessage={true}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(
+        screen.queryByTestId('interrupted-answer'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('keeps flagging an earlier answer while a turn runs without us', async () => {
+      await act(async () => {
+        renderWithProviders(
+          <MessageItem
+            {...defaultProps}
+            message={{
+              ...defaultProps.message,
+              metadata: { interrupted: true },
+            }}
+            isLastMessage={false}
+            isConversationStreaming={true}
+          />,
+        );
+      });
+
+      expect(screen.getByTestId('interrupted-answer')).toBeInTheDocument();
+    });
+
+    it('leaves a completed answer unflagged', async () => {
+      await act(async () => {
+        renderWithProviders(<MessageItem {...defaultProps} />);
+      });
+
+      expect(
+        screen.queryByTestId('interrupted-answer'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe('feedback buttons', () => {
+    describe('Assistant RH evaluations', () => {
+      beforeEach(() => {
+        mockConfig.ASSISTANT_RH_ENABLED = true;
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+        );
+      });
+
+      afterEach(() => vi.unstubAllGlobals());
+
+      it('renders real stars after streaming finishes even without a trace-prefixed message ID', async () => {
+        const client = new QueryClient({
+          defaultOptions: { queries: { retry: false } },
+        });
+        const message = {
+          ...defaultProps.message,
+          metadata: { assistant_rh: { status: 'available', sources: [] } },
+        };
+        const content = (streaming: boolean) =>
+          withProviders(
+            <QueryClientProvider client={client}>
+              <MessageItem
+                {...defaultProps}
+                message={message}
+                isLastAssistantMessage
+                status={streaming ? 'streaming' : 'ready'}
+              />
+            </QueryClientProvider>,
+          );
+        const { rerender } = render(content(true));
+        expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+        rerender(content(false));
+        expect(await screen.findAllByRole('radio')).toHaveLength(5);
+        expect(
+          screen.queryByTestId('feedback-buttons'),
+        ).not.toBeInTheDocument();
+        await userEvent.click(
+          screen.getByRole('radio', { name: /^3 étoiles/ }),
+        );
+        expect(
+          screen.getByRole('checkbox', { name: 'Clair' }),
+        ).toBeInTheDocument();
+      });
+
+      it.each([undefined, 'unavailable'])(
+        'hides evaluations without an authoritative run (%s)',
+        async (status) => {
+          renderWithProviders(
+            <MessageItem
+              {...defaultProps}
+              message={{
+                ...defaultProps.message,
+                id: 'trace-123',
+                metadata: { assistant_rh: { status, sources: [] } },
+              }}
+            />,
+          );
+          await screen.findByTestId('markdown-content');
+          expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+          expect(
+            screen.queryByTestId('feedback-buttons'),
+          ).not.toBeInTheDocument();
+          expect(fetch).not.toHaveBeenCalled();
+        },
+      );
+    });
+
     it('renders FeedbackButtons for trace messages', async () => {
       await act(async () => {
         renderWithProviders(
@@ -925,5 +1270,72 @@ describe('MessageItem', () => {
         screen.queryByTestId('summarization-error'),
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('truncated response metadata', () => {
+  const baseProps = {
+    isLastMessage: true,
+    isLastAssistantMessage: true,
+    isFirstConversationMessage: false,
+    streamingMessageHeight: null,
+    status: 'ready' as const,
+    conversationId: 'conv-1',
+    isSourceOpen: null,
+    isMobile: false,
+    onCopyToClipboard: vi.fn(),
+    onOpenSources: vi.fn(),
+    getMetadata: vi.fn(),
+  };
+
+  const renderMessage = (
+    message: Parameters<typeof MessageItem>[0]['message'],
+  ) =>
+    render(
+      <CunninghamProvider>
+        <Suspense fallback={null}>
+          <ToastProvider>
+            <MessageItem message={message} {...baseProps} />
+          </ToastProvider>
+        </Suspense>
+      </CunninghamProvider>,
+    );
+
+  it('renders TruncatedResponseMessage when metadata has truncated:true', () => {
+    renderMessage({
+      id: 'msg-1',
+      role: 'assistant' as const,
+      metadata: { truncated: true },
+      parts: [],
+    });
+
+    expect(
+      screen.getByTestId('truncated-response-message'),
+    ).toBeInTheDocument();
+  });
+
+  it('does not render TruncatedResponseMessage when metadata is absent', () => {
+    renderMessage({
+      id: 'msg-1',
+      role: 'assistant' as const,
+      parts: [],
+    });
+
+    expect(
+      screen.queryByTestId('truncated-response-message'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not render TruncatedResponseMessage when metadata lacks truncated:true', () => {
+    renderMessage({
+      id: 'msg-1',
+      role: 'assistant' as const,
+      metadata: { co2_impact: 0.001 },
+      parts: [],
+    });
+
+    expect(
+      screen.queryByTestId('truncated-response-message'),
+    ).not.toBeInTheDocument();
   });
 });

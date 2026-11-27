@@ -10,7 +10,7 @@ import {
 
 interface ModelSelectorProps {
   selectedModel: LLMModel | null;
-  onModelSelect: (model: LLMModel) => void;
+  onModelSelect?: (model: LLMModel) => void;
 }
 
 export const ModelSelector = ({
@@ -29,12 +29,24 @@ export const ModelSelector = ({
     (model) => model.is_active !== false,
   );
 
-  if (activeModels.length <= 1) {
+  if (activeModels.length === 0) {
     return null;
   }
 
-  const defaultModel = activeModels.find((model) => model.is_default);
-  const currentModel = selectedModel || defaultModel;
+  const defaultModel =
+    activeModels.find((model) => model.is_default) ??
+    (activeModels.length === 1 ? activeModels[0] : undefined);
+  const currentModel = selectedModel
+    ? activeModels.find((model) => model.hrid === selectedModel.hrid)
+    : defaultModel;
+
+  if (selectedModel && !currentModel) {
+    return null;
+  }
+
+  const currentModelLabel = currentModel?.hrid.startsWith('assistant-rh-')
+    ? currentModel.hrid.replace('assistant-rh-', '').toUpperCase()
+    : currentModel?.human_readable_name;
 
   const getModelIcon = (
     model: LLMModel,
@@ -88,6 +100,32 @@ export const ModelSelector = ({
     );
   };
 
+  const modelLabel = currentModelLabel && (
+    <Text
+      $theme="neutral"
+      $variation="primary"
+      $weight="500"
+      $size="s"
+      $css="white-space: nowrap;"
+    >
+      {currentModelLabel}
+    </Text>
+  );
+
+  if (!onModelSelect || activeModels.length === 1) {
+    return currentModel ? (
+      <Box
+        $direction="row"
+        $align="center"
+        $gap="0.25rem"
+        title={currentModel.human_readable_name}
+      >
+        {getModelIcon(currentModel, 'small')}
+        {modelLabel}
+      </Box>
+    ) : null;
+  }
+
   return (
     <Box
       $position="relative"
@@ -110,7 +148,12 @@ export const ModelSelector = ({
           color="neutral"
           variant="tertiary"
           onClick={() => setIsOpen(!isOpen)}
-          aria-label={t('Select model')}
+          aria-label={
+            currentModel
+              ? `${t('Select model')}: ${currentModel.human_readable_name}`
+              : t('Select model')
+          }
+          aria-expanded={isOpen}
           className="c__button--neutral model-selector-button"
           icon={
             <Box $css="display: flex; align-items: center;">
@@ -118,6 +161,7 @@ export const ModelSelector = ({
             </Box>
           }
         >
+          {modelLabel}
           <Icon
             iconName={isOpen ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}
             $theme="greyscale"

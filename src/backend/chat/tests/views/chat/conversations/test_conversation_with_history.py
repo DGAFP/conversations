@@ -7,7 +7,6 @@ from unittest.mock import ANY, patch
 from django.utils import timezone
 
 import pytest
-import respx
 from dirty_equals import IsUUID
 from freezegun import freeze_time
 from rest_framework import status
@@ -128,6 +127,7 @@ def history_conversation_fixture(request):
                 ],
             },
             {
+                "workspace_ref": None,
                 "kind": "response",
                 "model_name": "test-model",
                 "parts": [
@@ -162,6 +162,7 @@ def history_conversation_fixture(request):
                 ],
             },
             {
+                "workspace_ref": None,
                 "kind": "response",
                 "model_name": "test-model",
                 "parts": [
@@ -205,6 +206,7 @@ def history_conversation_fixture(request):
                 ],
             },
             {
+                "workspace_ref": None,
                 "kind": "response",
                 "model_name": "test-model",
                 "parts": [
@@ -244,6 +246,7 @@ def history_conversation_fixture(request):
                 ],
             },
             {
+                "workspace_ref": None,
                 "kind": "response",
                 "metadata": None,
                 "model_name": "test-model",
@@ -289,7 +292,6 @@ def history_conversation_fixture(request):
 
 @pytest.mark.parametrize("history_conversation", [PYAI_CURRENT, PYAI_V1_17], indirect=True)
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_data_protocol_with_history(
     api_client, mock_openai_stream, history_conversation
 ):
@@ -382,7 +384,6 @@ def test_post_conversation_data_protocol_with_history(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_with_image_with_history(
     api_client, mock_openai_stream_image, history_conversation
 ):
@@ -512,7 +513,6 @@ def test_post_conversation_with_image_with_history(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_tool_call_with_history(
     api_client, mock_openai_stream_tool, settings, history_conversation
 ):
@@ -627,7 +627,6 @@ def test_post_conversation_tool_call_with_history(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_tool_call_fails_with_history(
     api_client, mock_openai_stream_tool, history_conversation
 ):
@@ -824,6 +823,7 @@ def history_conversation_with_image_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "model_name": "test-model",
             "parts": [{"content": "I see a small black square in the image.", "part_kind": "text"}],
@@ -850,6 +850,7 @@ def history_conversation_with_image_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "model_name": "test-model",
             "parts": [
@@ -966,6 +967,7 @@ def history_conversation_with_tool_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "metadata": None,
             "model_name": "test-model",
@@ -1008,6 +1010,7 @@ def history_conversation_with_tool_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "metadata": None,
             "model_name": "test-model",
@@ -1042,6 +1045,7 @@ def history_conversation_with_tool_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "metadata": None,
             "model_name": "test-model",
@@ -1089,6 +1093,7 @@ def history_conversation_with_tool_fixture():
             ],
         },
         {
+            "workspace_ref": None,
             "kind": "response",
             "metadata": None,
             "model_name": "test-model",
@@ -1119,7 +1124,6 @@ def history_conversation_with_tool_fixture():
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_with_existing_image_history(
     api_client, mock_openai_stream, history_conversation_with_image
 ):
@@ -1212,7 +1216,6 @@ def test_post_conversation_with_existing_image_history(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_with_existing_tool_history(
     api_client, mock_openai_stream_tool, settings, history_conversation_with_tool
 ):
@@ -1334,6 +1337,7 @@ def test_post_conversation_with_existing_tool_history(
     }
 
     assert history_conversation_with_tool.pydantic_messages[9] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": "tool_call",
         "kind": "response",
@@ -1357,7 +1361,6 @@ def test_post_conversation_with_existing_tool_history(
         },
         "provider_name": "openai",
         "provider_response_id": "chatcmpl-tool-call",
-        "workspace_ref": None,
         "provider_url": "https://www.external-ai-service.com/",
         "state": "complete",
         "timestamp": "2025-07-25T10:36:35.297675Z",
@@ -1404,6 +1407,7 @@ def test_post_conversation_with_existing_tool_history(
     }
 
     assert history_conversation_with_tool.pydantic_messages[11] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": "stop",
         "kind": "response",
@@ -1424,7 +1428,6 @@ def test_post_conversation_with_existing_tool_history(
         },
         "provider_name": "openai",
         "provider_response_id": "chatcmpl-final",
-        "workspace_ref": None,
         "provider_url": "https://www.external-ai-service.com/",
         "state": "complete",
         "timestamp": "2025-07-25T10:36:35.297675Z",
@@ -1445,7 +1448,6 @@ def test_post_conversation_with_existing_tool_history(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_add_image_to_conversation_with_tool_history(
     api_client, mock_openai_stream_image, history_conversation_with_tool
 ):
@@ -1553,7 +1555,6 @@ def test_post_conversation_add_image_to_conversation_with_tool_history(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 @patch("chat.clients.pydantic_ai.TitleGenerationAgent", wraps=TitleGenerationAgent)
 def test_post_conversation_triggers_automatic_title_generation_after_first_message(
     mock_title_agent, api_client, mock_openai_stream_with_title_generation, settings
@@ -1616,7 +1617,6 @@ def test_post_conversation_triggers_automatic_title_generation_after_first_messa
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_triggers_automatic_title_generation_at_threshold(
     api_client, mock_openai_stream_with_title_generation, settings, history_conversation
 ):
@@ -1676,7 +1676,6 @@ def test_post_conversation_triggers_automatic_title_generation_at_threshold(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_does_not_regenerate_title_when_user_set(
     api_client, mock_openai_stream_with_title_generation, settings, history_conversation
 ):
@@ -1725,7 +1724,6 @@ def test_post_conversation_does_not_regenerate_title_when_user_set(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_does_not_generate_title_before_threshold(
     api_client, mock_openai_stream_with_title_generation, settings
 ):
@@ -1790,7 +1788,6 @@ def test_post_conversation_does_not_generate_title_before_threshold(
 
 
 @freeze_time("2025-07-25T10:36:35.297675Z")
-@respx.mock
 def test_post_conversation_does_not_generate_title_after_threshold(
     api_client, mock_openai_stream_with_title_generation, settings, history_conversation
 ):

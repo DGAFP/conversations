@@ -22,12 +22,14 @@ test.describe('Home page', () => {
       /^EN$/i,
     );
     await expect(
-      header.getByRole('img', { name: 'Assistant logo' }),
+      header.getByRole('img', { name: "L'Assistant RH Logo" }),
     ).toBeVisible();
 
     // Check the titles
     const h2 = page.locator('h2');
-    await expect(h2.getByText('Your sovereign AI assistant')).toBeVisible();
+    await expect(
+      h2.getByText('Your HR chatbot powered by generative AI'),
+    ).toBeVisible();
 
     await expect(footer).toBeVisible();
   });
@@ -69,15 +71,17 @@ test.describe('Home page', () => {
       header.getByRole('img', { name: 'Gouvernement Logo' }),
     ).toBeVisible();
     await expect(
-      header.getByRole('img', { name: 'Assistant logo' }),
+      header.getByRole('img', { name: "L'Assistant RH Logo" }),
     ).toBeVisible();
     await expect(
-      header.getByRole('img', { name: 'Assistant logo' }),
+      header.getByRole('img', { name: "L'Assistant RH Logo" }),
     ).toBeVisible();
 
     // Check the titles
     const h2 = page.locator('h2');
-    await expect(h2.getByText('Your sovereign AI assistant')).toBeVisible();
+    await expect(
+      h2.getByText('Your HR chatbot powered by generative AI'),
+    ).toBeVisible();
 
     await expect(footer).toBeVisible();
   });

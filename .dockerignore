@@ -40,3 +40,9 @@ db.sqlite3
 # app directory lands it in the image on top of the one `yarn install` just built.
 **/node_modules
 **/.next
+
+# Local credentials must never enter CI or local build contexts.
+.env
+.env.*
+**/.env
+**/.env.*

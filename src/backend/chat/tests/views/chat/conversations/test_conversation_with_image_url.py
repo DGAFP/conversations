@@ -53,7 +53,7 @@ def fixture_sample_image_content():
     )
 
 
-@freeze_time("2025-10-18T20:48:20.286204Z")
+@freeze_time("2025-10-18T20:48:20.286204Z", real_asyncio=True)
 def test_post_conversation_with_local_image_url(
     api_client,
     mock_ai_agent_service,
@@ -204,6 +204,7 @@ def test_post_conversation_with_local_image_url(
             "timestamp": "2025-10-18T20:48:20.286204Z",
         },
         {
+            "workspace_ref": None,
             "conversation_id": ANY,
             "finish_reason": None,
             "kind": "response",
@@ -221,7 +222,6 @@ def test_post_conversation_with_local_image_url(
             "provider_details": None,
             "provider_name": None,
             "provider_response_id": None,
-            "workspace_ref": None,
             "provider_url": None,
             "state": "complete",
             "timestamp": "2025-10-18T20:48:20.286204Z",
@@ -242,7 +242,7 @@ def test_post_conversation_with_local_image_url(
     ]
 
 
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_local_image_wrong_url(
     api_client,
     today_prompt_date,
@@ -331,7 +331,7 @@ def test_post_conversation_with_local_image_wrong_url(
     # normally raise an error when trying to access the image.
 
 
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_remote_image_url(
     api_client,
     today_prompt_date,
@@ -445,7 +445,7 @@ def test_post_conversation_with_remote_image_url(
     )
 
 
-@freeze_time("2025-10-18T20:48:20.286204Z")
+@freeze_time("2025-10-18T20:48:20.286204Z", real_asyncio=True)
 def test_post_conversation_with_local_image_url_in_history(
     api_client,
     today_prompt_date,
@@ -510,6 +510,7 @@ def test_post_conversation_with_local_image_url_in_history(
                 ],
             },
             {
+                "workspace_ref": None,
                 "finish_reason": None,
                 "kind": "response",
                 "model_name": "function::agent_model",
@@ -523,7 +524,6 @@ def test_post_conversation_with_local_image_url_in_history(
                 "provider_details": None,
                 "provider_name": None,
                 "provider_response_id": None,
-                "workspace_ref": None,
                 "timestamp": "2025-10-18T20:48:20.286204Z",
                 "usage": {
                     "audio_seconds": 0.0,
@@ -719,6 +719,7 @@ def test_post_conversation_with_local_image_url_in_history(
             ],
         },
         {
+            "workspace_ref": None,
             "finish_reason": None,
             "kind": "response",
             "model_name": "function::agent_model",
@@ -728,7 +729,6 @@ def test_post_conversation_with_local_image_url_in_history(
             "provider_details": None,
             "provider_name": None,
             "provider_response_id": None,
-            "workspace_ref": None,
             "timestamp": "2025-10-18T20:48:20.286204Z",
             "usage": {
                 "audio_seconds": 0.0,
@@ -763,6 +763,7 @@ def test_post_conversation_with_local_image_url_in_history(
             "timestamp": "2025-10-18T20:48:20.286204Z",
         },
         {
+            "workspace_ref": None,
             "conversation_id": ANY,
             "finish_reason": None,
             "kind": "response",
@@ -780,7 +781,6 @@ def test_post_conversation_with_local_image_url_in_history(
             "provider_details": None,
             "provider_name": None,
             "provider_response_id": None,
-            "workspace_ref": None,
             "provider_url": None,
             "state": "complete",
             "timestamp": "2025-10-18T20:48:20.286204Z",

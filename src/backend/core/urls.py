@@ -8,6 +8,7 @@ from rest_framework.routers import DefaultRouter
 
 from core.api import viewsets
 from core.authentication import local
+from core.authentication.views import confirm_invitation
 from core.file_upload.enums import FileToLLMMode
 
 from chat.views import (
@@ -21,6 +22,8 @@ from chat.views import (
     LLMConfigurationView,
     ModelHealthView,
 )
+from chat.views.assistant_rh_documents import document as assistant_rh_document
+from chat.views.assistant_rh_feedback import AssistantRHFeedbackView
 
 # - Main endpoints
 router = DefaultRouter()
@@ -41,8 +44,34 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/",
         include(
             [
+                path(
+                    "chats/<uuid:conversation_id>/messages/<str:message_id>/feedback/",
+                    AssistantRHFeedbackView.as_view(),
+                    name="assistant-rh-feedback",
+                ),
+                path(
+                    "chats/<uuid:conversation_id>/messages/<str:message_id>/"
+                    "sources/<int:source_index>/",
+                    assistant_rh_document,
+                    name="assistant-rh-document",
+                ),
                 *router.urls,
                 path("authenticate/", local.login),
+                path(
+                    "proconnect/authenticate/",
+                    local.proconnect_login,
+                    name="assistant-rh-proconnect-login",
+                ),
+                path(
+                    "proconnect/confirm/",
+                    confirm_invitation,
+                    name="assistant-rh-proconnect-confirm",
+                ),
+                path(
+                    "local/authenticate/",
+                    local.technical_login,
+                    name="assistant-rh-technical-login",
+                ),
                 path("logout/", local.logout),
                 *oidc_urls,
                 path(

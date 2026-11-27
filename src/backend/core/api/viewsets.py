@@ -14,7 +14,7 @@ from rest_framework.permissions import AllowAny
 
 from core import models, permissions
 from core.analytics import capture_event
-from core.authentication.local import local_login_enabled
+from core.authentication.local import public_local_login_enabled
 from core.middleware import is_maintenance_active
 
 from chat.mcp_servers import DataGouvConnector
@@ -174,6 +174,7 @@ class ConfigView(drf.views.APIView):
             "FEATURE_FLAGS",
             "FILE_UPLOAD_MODE",
             "FRONTEND_SILENT_LOGIN_ENABLED",
+            "RELEASE",
         ]
         dict_settings = {}
         for setting in array_settings:
@@ -183,7 +184,7 @@ class ConfigView(drf.views.APIView):
             else:
                 dict_settings[setting] = getattr(settings, setting)
 
-        dict_settings["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] = local_login_enabled()
+        dict_settings["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"] = public_local_login_enabled()
         if dict_settings["ASSISTANT_RH_LOCAL_LOGIN_ENABLED"]:
             # Also covers runtime toggles, which never re-run the settings setup().
             dict_settings["FRONTEND_SILENT_LOGIN_ENABLED"] = False

@@ -51,6 +51,7 @@ export interface ConfigResponse {
   ASSISTANT_RH_ENABLED?: boolean;
   ASSISTANT_RH_LOCAL_LOGIN_ENABLED?: boolean;
   FRONTEND_SILENT_LOGIN_ENABLED?: boolean;
+  RELEASE?: string;
   theme_customization?: ThemeCustomization;
   status_banner?: StatusBanner;
   maintenance?: MaintenanceConfig | null;
@@ -117,7 +118,8 @@ export const KEY_CONFIG = 'config';
 
 // Force initial data to be considered stale. Any timestamp at least staleTime
 // old does that, so computing it once when the module loads keeps it true.
-const INITIAL_DATA_UPDATED_AT = Date.now() - ONE_HOUR;
+// Also tells the stored copy apart from a config actually fetched.
+export const INITIAL_DATA_UPDATED_AT = Date.now() - ONE_HOUR;
 
 export function useConfig() {
   return useQuery<ConfigResponse, APIError, ConfigResponse>({

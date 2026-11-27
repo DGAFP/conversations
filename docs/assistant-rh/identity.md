@@ -208,3 +208,8 @@ le provider PydanticAI/OpenAI, le schéma des messages et les permissions de tou
 les chemins d’historique. Exécuter la CI et la recette RH avant promotion ; ne
 pas publier un deuxième jeu de patchs pour Compose. #593 doit épingler le commit
 validé du fork. Les adaptations visuelles restent suivies dans #595.
+
+
+## Consultation des sources (#594)
+
+Le [contrat documentaire du fork](documents.md) décrit l’association serveur message/completion, le proxy PDF sous session et la recette requise avec D2. Chaque nouvelle lecture relit les droits avant une délégation fraîche ; aucun bearer ni lien S3 ne parvient au navigateur.
