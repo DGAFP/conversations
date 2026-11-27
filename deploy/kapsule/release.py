@@ -299,7 +299,11 @@ def existing_digest(reference):
         check=False,
     )
     if result.returncode:
-        if "404" in result.stderr:
+        # ORAS 1.3 reports ErrNotFound without an HTTP status code.
+        missing = (
+            "Error response from registry: failed to resolve digest: " + reference + ": not found"
+        )
+        if result.stderr.strip() == missing:
             return None
         raise RuntimeError("Registry lookup failed; artifact existence is unknown")
     if not DIGEST.fullmatch(result.stdout.strip()):
@@ -474,21 +478,8 @@ def publish():
             if digest != source["digest"]:
                 raise RuntimeError("Image promotion changed its digest")
         else:
-            existing = subprocess.run(
-                [
-                    "oras",
-                    "resolve",
-                    "--registry-config",
-                    os.environ["TARGET_REGISTRY_CONFIG"],
-                    image + ":" + image_tag,
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            if existing.returncode and "404" not in existing.stderr:
-                raise RuntimeError("Cannot establish whether a release image already exists")
-            if existing.returncode:
+            existing = existing_digest(image + ":" + image_tag)
+            if existing is None:
                 dockerfile = "Dockerfile" if name == "backend" else "src/frontend/Dockerfile"
                 command(
                     "docker",
@@ -513,12 +504,8 @@ def publish():
                     cwd="source",
                 )
             else:
-                command("docker", "pull", image + "@" + existing.stdout.strip())
-            reference = (
-                image + ":" + image_tag
-                if existing.returncode
-                else image + "@" + existing.stdout.strip()
-            )
+                command("docker", "pull", image + "@" + existing)
+            reference = image + ":" + image_tag if existing is None else image + "@" + existing
             label = command(
                 "docker",
                 "image",
@@ -540,7 +527,7 @@ def publish():
                 "1",
                 reference,
             )
-            if existing.returncode:
+            if existing is None:
                 command("docker", "push", reference)
             digest = command(
                 "oras",
