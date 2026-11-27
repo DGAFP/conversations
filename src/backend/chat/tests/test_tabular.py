@@ -92,6 +92,21 @@ def test_csv_delimiter_ignores_quoted_header_punctuation(delimiter, header):
     assert dataset.frames["data"]["montant"].sum() == 25
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"tags;amount\n'red','blue';10\n'green','blue';15\n",
+        b"name,note;amount\nalpha;10\nbeta;15\n",
+    ],
+)
+def test_csv_delimiter_uses_header_and_record_consistency(content):
+    """Literal apostrophes and header punctuation do not replace field separators."""
+    dataset = build_dataset([_csv(content, "data.csv")])
+
+    assert [column.kind for column in dataset.tables[0].columns] == ["text", "integer"]
+    assert dataset.frames["data"]["amount"].sum() == 25
+
+
 def test_mixed_column_stays_text():
     """A column with one non-numeric value is kept as text, values unchanged."""
     dataset = build_dataset([_csv(b"ref;qty\nA;1\nB;n/a\n", "stock.csv")])
