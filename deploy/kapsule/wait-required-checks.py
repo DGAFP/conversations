@@ -18,22 +18,15 @@ REPOSITORY = "DGAFP/conversations"
 BRANCH = "main"
 
 
-def evaluate(runs, sha):
+def evaluate(runs, sha, release_tag=None):
     pending = []
     for path in REQUIRED:
         matches = [
             r
             for r in runs
             if r.get("head_sha") == sha
-            and (
-                (r.get("head_branch") == BRANCH and r.get("event") == "push")
-                or (
-                    r.get("event") == "pull_request"
-                    and any(
-                        p.get("base", {}).get("ref") == BRANCH for p in r.get("pull_requests", [])
-                    )
-                )
-            )
+            and r.get("event") == "push"
+            and r.get("head_branch") in {BRANCH, release_tag}
             and r.get("path") == ".github/workflows/" + path
         ]
         if not matches:
@@ -69,7 +62,7 @@ def main():
         payload = json.loads(result.stdout)
         if payload["total_count"] > 100:
             raise RuntimeError("Too many workflow runs to validate unambiguously")
-        pending = evaluate(payload["workflow_runs"], sha)
+        pending = evaluate(payload["workflow_runs"], sha, os.environ["RELEASE_TAG"])
         if not pending:
             sys.stdout.write(f"Required push workflows succeeded on exact delivery SHA: {sha}\n")
             return

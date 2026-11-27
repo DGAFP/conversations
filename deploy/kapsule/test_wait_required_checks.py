@@ -46,17 +46,18 @@ class DeliveryGateTest(unittest.TestCase):
                 runs[0][key] = value
                 self.assertEqual(gate.evaluate(runs, SHA), [gate.REQUIRED[0]])
 
-    def test_integrated_hotfix_uses_its_exact_pull_request_revision(self):
+    def test_integrated_hotfix_requires_its_exact_tag_push_revision(self):
         runs = self.runs()
         for run in runs:
             run.update(
-                head_branch="hotfix/1.2.1",
-                event="pull_request",
-                pull_requests=[{"base": {"ref": "main"}}],
+                head_branch="v1.2.1-rc.1",
+                event="push",
             )
-        self.assertEqual(gate.evaluate(runs, SHA), [])
-        runs[0]["pull_requests"][0]["base"]["ref"] = "staging"
-        self.assertEqual(gate.evaluate(runs, SHA), [gate.REQUIRED[0]])
+        self.assertEqual(gate.evaluate(runs, SHA, "v1.2.1-rc.1"), [])
+        runs[0].update(event="pull_request", pull_requests=[{"base": {"ref": "main"}}])
+        self.assertEqual(gate.evaluate(runs, SHA, "v1.2.1-rc.1"), [gate.REQUIRED[0]])
+        runs[0].update(event="push", head_branch="v1.2.1-rc.2")
+        self.assertEqual(gate.evaluate(runs, SHA, "v1.2.1-rc.1"), [gate.REQUIRED[0]])
 
     def test_pending_is_not_success(self):
         runs = self.runs()
