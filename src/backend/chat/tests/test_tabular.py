@@ -79,6 +79,21 @@ def test_comma_csv_reads_dot_decimals():
     assert dataset.frames["data"]["amount"].sum() == pytest.approx(11.75)
 
 
+@pytest.mark.parametrize("delimiter", [";", "\t", "|"])
+@pytest.mark.parametrize("header", ["Nom, prenom", "Nom,\nprenom"])
+def test_csv_delimiter_ignores_quoted_header_punctuation(delimiter, header):
+    """Quoted commas and newlines do not hide the numeric amount column."""
+    content = (
+        f'"{header}"{delimiter}Montant\n'
+        f'"Dupont, Jean"{delimiter}10\n'
+        f'"Durand, Anne"{delimiter}15\n'
+    ).encode()
+    dataset = build_dataset([_csv(content, "data.csv")])
+
+    assert [column.kind for column in dataset.tables[0].columns] == ["text", "integer"]
+    assert dataset.frames["data"]["montant"].sum() == 25
+
+
 def test_mixed_column_stays_text():
     """A column with one non-numeric value is kept as text, values unchanged."""
     dataset = build_dataset([_csv(b"ref;qty\nA;1\nB;n/a\n", "stock.csv")])

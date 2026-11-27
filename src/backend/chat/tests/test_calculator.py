@@ -25,6 +25,7 @@ def _result(expression: str) -> str:
         ("2 ** 10", "1024"),
         ("2 ** 100", "1267650600228229401496703205376"),
         ("2 ** -1", "0.5"),
+        ("0 ** 2", "0"),
         ("2 ** 0.5", "1.414213562373095048801688724"),
         ("sqrt(16)", "4"),
         ("abs(-3.5)", "3.5"),
@@ -84,6 +85,10 @@ def test_calculate_returns_the_expression_as_written():
     "expression,message",
     [
         ("1/0", "Division by zero."),
+        ("0 ** -1", "Division by zero."),
+        ("1 / (0 ** -1)", "Division by zero."),
+        ("min(0 ** -1, 2)", "Division by zero."),
+        ("(1 - 1) ** -2", "Division by zero."),
         ("5 % 0", "Division by zero."),
         ("0/0", "Undefined result"),
         ("(-8) ** 0.5", "Undefined result"),
