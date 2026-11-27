@@ -32,7 +32,7 @@ interface InputChatActionsProps {
   onWebSearchToggle?: () => void;
   /** Handler for the DataGouv toggle - if undefined, option is hidden */
   onDatagouvToggle?: () => void;
-  /** Handler for model selection - if undefined, selector is hidden */
+  /** Handler for model selection - if undefined, the model is read-only */
   onModelSelect?: (model: LLMModel) => void;
   /** Currently selected model */
   selectedModel: LLMModel | null;
@@ -247,7 +247,7 @@ export const InputChatActions = memo(
           $padding={STYLES.horizontalPadding}
           $gap={spacingsTokens.xs}
         >
-          {onModelSelect && (
+          {(onModelSelect || selectedModel) && (
             <Box $padding={STYLES.horizontalPaddingXs}>
               <ModelSelector
                 selectedModel={selectedModel}

@@ -274,7 +274,7 @@ def fixture_mock_summarization_agent():
 
 @pytest.fixture(name="mock_openai_stream")
 @freeze_time("2025-07-25T10:36:35.297675Z")
-def fixture_mock_openai_stream():
+def fixture_mock_openai_stream(httpx2_mock):
     """
     Fixture to mock the OpenAI stream response for document search queries.
     """
@@ -323,7 +323,7 @@ def fixture_mock_openai_stream():
         for line in openai_stream.splitlines(keepends=True):
             yield line.encode()
 
-    route = respx.post("https://www.external-ai-service.com/chat/completions").mock(
+    route = httpx2_mock.post("https://www.external-ai-service.com/chat/completions").mock(
         return_value=httpx.Response(200, stream=mock_stream())
     )
 
@@ -332,7 +332,7 @@ def fixture_mock_openai_stream():
 
 @respx.mock
 @respx.mock
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_document_upload(
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     api_client,
@@ -486,6 +486,7 @@ def test_post_conversation_with_document_upload(
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[1] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -506,7 +507,6 @@ def test_post_conversation_with_document_upload(
         "provider_details": None,
         "provider_name": None,
         "provider_response_id": None,
-        "workspace_ref": None,
         "provider_url": None,
         "state": "complete",
         "timestamp": timezone_now,
@@ -554,6 +554,7 @@ def test_post_conversation_with_document_upload(
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[3] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -571,7 +572,6 @@ def test_post_conversation_with_document_upload(
         "provider_details": None,
         "provider_name": None,
         "provider_response_id": None,
-        "workspace_ref": None,
         "provider_url": None,
         "state": "complete",
         "timestamp": timezone_now,
@@ -593,7 +593,7 @@ def test_post_conversation_with_document_upload(
 
 @respx.mock
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_with_document_upload_feature_disabled(
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     api_client,
@@ -665,7 +665,7 @@ def test_post_conversation_with_document_upload_feature_disabled(
 @respx.mock
 @respx.mock
 @freeze_time()
-def test_post_conversation_with_document_upload_summarize(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913
+def test_post_conversation_with_document_upload_summarize(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # noqa: PLR0913, PLR0917
     api_client,
     mock_document_api,  # pylint: disable=unused-argument
     sample_pdf_content,
@@ -817,6 +817,7 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[1] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -837,7 +838,6 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
         "provider_details": None,
         "provider_name": None,
         "provider_response_id": None,
-        "workspace_ref": None,
         "provider_url": None,
         "state": "complete",
         "timestamp": timezone_now,
@@ -879,6 +879,7 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[3] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -896,7 +897,6 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
         "provider_details": None,
         "provider_name": None,
         "provider_response_id": None,
-        "workspace_ref": None,
         "provider_url": None,
         "state": "complete",
         "timestamp": timezone_now,
@@ -918,7 +918,7 @@ def test_post_conversation_with_document_upload_summarize(  # pylint: disable=to
 
 @respx.mock
 @respx.mock
-@freeze_time()
+@freeze_time(real_asyncio=True)
 def test_post_conversation_with_odt_document_upload(
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     api_client,
@@ -1075,6 +1075,7 @@ def test_post_conversation_with_odt_document_upload(
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[1] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -1095,7 +1096,6 @@ def test_post_conversation_with_odt_document_upload(
         "provider_details": None,
         "provider_name": None,
         "provider_response_id": None,
-        "workspace_ref": None,
         "provider_url": None,
         "state": "complete",
         "timestamp": timezone_now,
@@ -1143,6 +1143,7 @@ def test_post_conversation_with_odt_document_upload(
         "timestamp": timezone_now,
     }
     assert chat_conversation.pydantic_messages[3] == {
+        "workspace_ref": None,
         "conversation_id": ANY,
         "finish_reason": None,
         "kind": "response",
@@ -1160,7 +1161,6 @@ def test_post_conversation_with_odt_document_upload(
         "provider_details": None,
         "provider_name": None,
         "provider_response_id": None,
-        "workspace_ref": None,
         "provider_url": None,
         "state": "complete",
         "timestamp": timezone_now,

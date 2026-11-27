@@ -80,3 +80,8 @@ def throttle_rates(**overrides):
         "THROTTLE_RATES",
         {**SimpleRateThrottle.THROTTLE_RATES, **overrides},
     )
+
+
+def agent_instructions(agent):
+    """Unwrap the attributed instructions in the pinned Pydantic AI version."""
+    return [item.instruction for item in agent._instructions]  # pylint: disable=protected-access

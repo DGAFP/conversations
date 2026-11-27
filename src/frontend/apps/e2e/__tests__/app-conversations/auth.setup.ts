@@ -13,7 +13,9 @@ const saveStorageState = async (
   const page = await context.newPage();
 
   try {
-    await page.goto('/', { waitUntil: 'networkidle' });
+    // Start explicit sign-in on the public home page: "/" first triggers a
+    // silent OIDC round trip, which can outlast the home-page assertion.
+    await page.goto('/home', { waitUntil: 'networkidle' });
     await page.content();
     await expect(page.getByText('Assistant').first()).toBeVisible();
 

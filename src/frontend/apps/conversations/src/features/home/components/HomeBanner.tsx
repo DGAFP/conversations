@@ -2,7 +2,7 @@ import { Button } from '@gouvfr-lasuite/cunningham-react';
 import { useTranslation } from 'react-i18next';
 import { css } from 'styled-components';
 
-import IconAssistant from '@/assets/logo/logomark.svg?react';
+import LogoAssistant from '@/assets/logo/logo-assistant.svg?react';
 import { Box, Icon, Text } from '@/components';
 import { productName, useConfig } from '@/core';
 import { useCunninghamTheme } from '@/cunningham';
@@ -52,9 +52,9 @@ export default function HomeBanner() {
           $align="left"
           $gap={spacingsTokens['s']}
         >
-          <IconAssistant
+          <LogoAssistant
             aria-label={t('{{productName}} Logo', { productName })}
-            width={64}
+            width={280}
             color={colorsTokens['logo-1-light']}
           />
           <Text
@@ -69,11 +69,11 @@ export default function HomeBanner() {
               line-height: 1.2;
             `}
           >
-            {t('Your sovereign AI assistant')}
+            {t('Your HR chatbot powered by generative AI')}
           </Text>
           <Text $theme="neutral" $variation="tertiary">
             {t(
-              'A privacy-first assistant built for French public teams. Natively synced with LaSuite apps to help you draft, search, and decide without leaving your workflow.',
+              'A conversational assistant designed to provide HR managers with instant, sourced answers from an up-to-date corpus of HR regulations.',
             )}
           </Text>
 

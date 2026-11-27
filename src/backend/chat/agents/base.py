@@ -6,11 +6,13 @@ import logging
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
-import httpx
+import httpx2
 from pydantic_ai import Agent, InstructionPart, ModelRequestContext, RunContext
 from pydantic_ai.capabilities import Hooks
 from pydantic_ai.models import get_user_agent
 from pydantic_ai.profiles import ModelProfile
+
+from core import instrumentation
 
 from chat.assistant_rh_delegation import delegated_model
 from chat.tools import get_pydantic_tools_by_name
@@ -30,7 +32,7 @@ def _patch_openai_streaming_list_content():
     We normalize list content to str before delegating to the original method.
 
     ⚠ WARNING: this is a monkey patch and may break if the original function
-    changes in future versions of pydantic_ai. Current version: v2.22.0
+    changes in future versions of pydantic_ai. Current version: v2.52.0
     """
     # pylint: disable=import-outside-toplevel,protected-access
     import pydantic_ai.models.openai as openai_models  # noqa: PLC0415
@@ -60,6 +62,17 @@ def _patch_openai_streaming_list_content():
 
     OpenAIStreamedResponse._map_text_delta = _safe_map_text_delta  # noqa: SLF001
     openai_models.__safe_text_delta_patched__ = True
+
+
+def get_max_output_tokens(configuration: "chat.llm_configuration.LLModel") -> int | None:
+    """The output token cap for a model, or None for no cap.
+
+    A `max_tokens` declared in the LLM configuration wins, so operators keep a
+    per-model knob; otherwise the global LLM_MAX_OUTPUT_TOKENS_PER_MESSAGE applies,
+    where 0 disables the cap.
+    """
+    _configured = configuration.settings.max_tokens if configuration.settings else None
+    return _configured or settings.LLM_MAX_OUTPUT_TOKENS_PER_MESSAGE or None
 
 
 def prepare_custom_model(configuration: "chat.llm_configuration.LLModel"):
@@ -94,8 +107,8 @@ def prepare_custom_model(configuration: "chat.llm_configuration.LLModel"):
                     api_key=configuration.provider.api_key,
                     base_url=configuration.provider.base_url,
                     # Disable the use of cached client
-                    http_client=httpx.AsyncClient(
-                        timeout=httpx.Timeout(timeout=600, connect=5),
+                    http_client=httpx2.AsyncClient(
+                        timeout=httpx2.Timeout(timeout=600, connect=5),
                         headers={"User-Agent": get_user_agent()},
                     ),
                 ),
@@ -233,6 +246,10 @@ class BaseAgent(Agent):
                 return dataclasses.replace(request_context, model_request_parameters=new_params)
 
             _capabilities.append(_hooks)
+
+        _metrics_hooks = instrumentation.llm_metrics_hooks(self.configuration, type(self).__name__)
+        if _metrics_hooks is not None:
+            _capabilities.append(_metrics_hooks)
 
         super().__init__(
             model=_model_instance,

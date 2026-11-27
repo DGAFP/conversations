@@ -9,5 +9,10 @@
   <input type="hidden" name="next" value="{{ next }}">
   <button type="submit">Se connecter</button>
 </form>
+{% if proconnect_login_enabled %}
+<hr>
+<p><a class="button-secondary" href="{% url 'assistant-rh-proconnect-login' %}" role="button">Tester ProConnect</a></p>
+<p>ProConnect d'intégration : utilisez une identité de test. Votre accès habituel et votre historique restent associés à votre compte local.</p>
+{% endif %}
 <p>Pour obtenir un accès ou réinitialiser votre mot de passe, contactez votre administrateur.</p>
 {% endblock %}

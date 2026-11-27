@@ -15,6 +15,8 @@ import SourcesIcon from '@/assets/icons/uikit-custom/sources.svg?react';
 import { Box, Loader, Text } from '@/components';
 import { useConfig } from '@/core/config';
 import { SkippableFileUIPart } from '@/features/chat/api/useChat';
+import { AssistantRHFeedback } from '@/features/chat/components/AssistantRHFeedback';
+import { assistantRHSources } from '@/features/chat/components/AssistantRHSources';
 import { AttachmentList } from '@/features/chat/components/AttachmentList';
 import { FeedbackButtons } from '@/features/chat/components/FeedbackButtons';
 import {
@@ -26,8 +28,11 @@ import { MoreActionsButton } from '@/features/chat/components/MoreActionsButton'
 import { SummarizationError } from '@/features/chat/components/SummarizationError';
 import { SummarizationProgress } from '@/features/chat/components/SummarizationProgress';
 import { ToolInvocationItem } from '@/features/chat/components/ToolInvocationItem';
+import { TruncatedResponseMessage } from '@/features/chat/components/TruncatedResponseMessage';
 import { getMessageCo2Impact } from '@/features/chat/utils/getMessageCo2Impact';
 import { getMessageText } from '@/features/chat/utils/getMessageText';
+import { isMessageInterrupted } from '@/features/chat/utils/isMessageInterrupted';
+import { withoutAssistantRHSources } from '@/features/chat/utils/withoutAssistantRHSources';
 
 import { ChatErrorType } from './ChatError';
 
@@ -42,6 +47,11 @@ const chatActionIconProps = {
   } as const,
   'aria-hidden': true,
 };
+
+type TruncationMetadata = { truncated?: boolean };
+
+const isMessageTruncated = (message: UIMessage): boolean =>
+  (message.metadata as TruncationMetadata | undefined)?.truncated === true;
 
 // Memoized blocks list to prevent parent re-renders from causing block remounts
 const BlocksList = React.memo(
@@ -202,6 +212,8 @@ export interface MessageItemProps {
   streamingMessageHeight: number | null;
   status: 'submitted' | 'streaming' | 'ready' | 'error';
   chatErrorType?: ChatErrorType;
+  /** True while the backend reports a turn still running for this conversation. */
+  isConversationStreaming?: boolean;
   onRetry?: () => void;
   conversationId: string | undefined;
   isSourceOpen: string | null;
@@ -218,6 +230,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
   streamingMessageHeight,
   status,
   chatErrorType,
+  isConversationStreaming = false,
   onRetry,
   conversationId,
   isSourceOpen,
@@ -262,6 +275,15 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
 
   const co2ImpactKg = getMessageCo2Impact(message);
 
+  // A stored checkpoint of a turn that never finished: the text stops where
+  // the stream was cut, so say so rather than let it read as a full answer.
+  // Unless the turn is merely running without us, in which case the text is
+  // not final and the conversation already says so above the composer. That
+  // turn only ever writes the last message: an earlier answer stays flagged.
+  const isInterrupted =
+    isMessageInterrupted(message) &&
+    !(isConversationStreaming && isLastMessage);
+
   const sourceParts = React.useMemo(
     () =>
       message.parts.filter(
@@ -289,6 +311,13 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
   );
 
   const textContent = React.useMemo(() => getMessageText(message), [message]);
+
+  const isRHResponse =
+    message.role === 'assistant' && Boolean(config?.ASSISTANT_RH_ENABLED);
+  const rhSources = isRHResponse ? assistantRHSources(message) : [];
+  const sourceCount = isRHResponse ? rhSources.length : sourceParts.length;
+  const displayedText =
+    rhSources.length > 0 ? withoutAssistantRHSources(textContent) : textContent;
 
   const hasTextContent = textContent.trim().length > 0;
 
@@ -323,6 +352,10 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
         ),
     [toolInvocationParts],
   );
+
+  const isTruncated = React.useMemo(() => {
+    return message.role === 'assistant' && isMessageTruncated(message);
+  }, [message]);
 
   const conversationSummarizeInvocation = React.useMemo(
     () =>
@@ -368,12 +401,12 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
     // When not streaming, everything is completed as a single block array
     if (!isCurrentlyStreaming) {
       return {
-        completedBlocks: splitIntoBlocks(textContent),
+        completedBlocks: splitIntoBlocks(displayedText),
         pending: '',
       };
     }
-    return splitStreamingContent(textContent);
-  }, [isCurrentlyStreaming, textContent]);
+    return splitStreamingContent(displayedText);
+  }, [isCurrentlyStreaming, displayedText]);
 
   const handleCopy = React.useCallback(() => {
     const html = contentRef.current?.innerHTML;
@@ -467,7 +500,6 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                   {textContent}
                 </Text>
               ) : (
-                // Render completed blocks as markdown, pending block as plain text
                 <BlocksList blocks={completedBlocks} pending={pending} />
               )}
             </Box>
@@ -567,9 +599,25 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
             )}
           </Box>
 
+          {isInterrupted && (
+            <Box $margin={{ top: 'tiny' }} data-testid="interrupted-answer">
+              <Text $theme="greyscale" $variation="600" $size="sm">
+                {t('This answer was interrupted and is incomplete.')}
+              </Text>
+            </Box>
+          )}
+
+          {isTruncated && <TruncatedResponseMessage />}
+
+          {/* A turn running without us writes the last message; until it
+              has one, the last assistant message is the previous answer. */}
           {message.role === 'assistant' &&
             hasAssistantOutput &&
-            !(isLastAssistantMessage && status === 'streaming') && (
+            !(
+              isLastAssistantMessage &&
+              (status === 'streaming' ||
+                (isConversationStreaming && isLastMessage))
+            ) && (
               <Box
                 $css="color: #222631; font-size: 12px;"
                 $direction="row"
@@ -603,7 +651,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                         messageId={message.id}
                       />
                     )}
-                  {sourceParts.length > 0 && (
+                  {(sourceCount > 0 || isRHResponse) && (
                     <Button
                       size="nano"
                       variant="tertiary"
@@ -618,10 +666,10 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                     >
                       <Text $theme="neutral" $variation="tertiary">
                         {isSourceOpen !== message.id ? t('Show') : t('Hide')}{' '}
-                        {isSourceOpen !== message.id
-                          ? `${sourceParts.length} `
+                        {isSourceOpen !== message.id && sourceCount > 0
+                          ? `${sourceCount} `
                           : ''}
-                        {sourceParts.length !== 1 ? t('sources') : t('source')}
+                        {sourceCount !== 1 ? t('sources') : t('source')}
                       </Text>
                     </Button>
                   )}
@@ -630,14 +678,31 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                   {co2ImpactKg !== undefined && (
                     <MessageEnergyIndicator co2ImpactKg={co2ImpactKg} />
                   )}
-                  {conversationId && message.id?.startsWith('trace-') && (
-                    <FeedbackButtons
-                      conversationId={conversationId}
-                      messageId={message.id}
-                    />
-                  )}
+                  {!isRHResponse &&
+                    conversationId &&
+                    message.id?.startsWith('trace-') && (
+                      <FeedbackButtons
+                        conversationId={conversationId}
+                        messageId={message.id}
+                      />
+                    )}
                 </Box>
               </Box>
+            )}
+          {isRHResponse &&
+            hasAssistantOutput &&
+            conversationId &&
+            message.id &&
+            (
+              message.metadata as
+                { assistant_rh?: { status?: string } } | undefined
+            )?.assistant_rh?.status === 'available' &&
+            !(isLastAssistantMessage && status === 'streaming') && (
+              <AssistantRHFeedback
+                key={`${conversationId}-${message.id}`}
+                conversationId={conversationId}
+                messageId={message.id}
+              />
             )}
         </Box>
       </Box>
@@ -682,6 +747,9 @@ const arePropsEqual = (
   if (getMessageText(prevProps.message) !== getMessageText(nextProps.message)) {
     return false;
   }
+  if (prevProps.message.metadata !== nextProps.message.metadata) {
+    return false;
+  }
   if (prevProps.message.role !== nextProps.message.role) {
     return false;
   }
@@ -689,6 +757,13 @@ const arePropsEqual = (
   if (
     getMessageCo2Impact(prevProps.message) !==
     getMessageCo2Impact(nextProps.message)
+  ) {
+    return false;
+  }
+
+  if (
+    isMessageInterrupted(prevProps.message) !==
+    isMessageInterrupted(nextProps.message)
   ) {
     return false;
   }
@@ -708,6 +783,14 @@ const arePropsEqual = (
   if (
     getSourcePartsCount(prevProps.message) !==
     getSourcePartsCount(nextProps.message)
+  ) {
+    return false;
+  }
+
+  // Check truncation metadata
+  if (
+    isMessageTruncated(prevProps.message) !==
+    isMessageTruncated(nextProps.message)
   ) {
     return false;
   }
@@ -747,6 +830,10 @@ const arePropsEqual = (
     return false;
   }
   if (prevProps.chatErrorType !== nextProps.chatErrorType) {
+    return false;
+  }
+
+  if (prevProps.isConversationStreaming !== nextProps.isConversationStreaming) {
     return false;
   }
   if (prevProps.onRetry !== nextProps.onRetry) {

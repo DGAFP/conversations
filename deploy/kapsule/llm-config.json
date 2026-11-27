@@ -1,0 +1,52 @@
+{
+  "providers": [
+    {
+      "hrid": "assistant-rh",
+      "kind": "assistant-rh",
+      "base_url": "http://assistant-rh-api.assistant-rh-api.svc.cluster.local:8000/v1",
+      "api_key": "delegated-at-send-time"
+    }
+  ],
+  "models": [
+    {
+      "hrid": "assistant-rh-masa",
+      "model_name": "assistant-rh-masa",
+      "human_readable_name": "MASA",
+      "provider_name": "assistant-rh",
+      "is_active": true,
+      "supports_streaming": true,
+      "system_prompt": "",
+      "tools": []
+    },
+    {
+      "hrid": "assistant-rh-matte",
+      "model_name": "assistant-rh-matte",
+      "human_readable_name": "MATTE",
+      "provider_name": "assistant-rh",
+      "is_active": true,
+      "supports_streaming": true,
+      "system_prompt": "",
+      "tools": []
+    },
+    {
+      "hrid": "assistant-rh-mi",
+      "model_name": "assistant-rh-mi",
+      "human_readable_name": "MI",
+      "provider_name": "assistant-rh",
+      "is_active": true,
+      "supports_streaming": true,
+      "system_prompt": "",
+      "tools": []
+    },
+    {
+      "hrid": "assistant-rh-mso",
+      "model_name": "assistant-rh-mso",
+      "human_readable_name": "MSO",
+      "provider_name": "assistant-rh",
+      "is_active": true,
+      "supports_streaming": true,
+      "system_prompt": "",
+      "tools": []
+    }
+  ]
+}

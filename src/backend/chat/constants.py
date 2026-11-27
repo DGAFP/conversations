@@ -29,6 +29,12 @@ SUMMARIZATION_TASK_SOFT_TIME_LIMIT = 110  # seconds, raises SoftTimeLimitExceede
 SUMMARIZATION_TASK_TIME_LIMIT = 120  # seconds, worker is SIGKILLed
 HISTORY_SUMMARY_CLAIM_TTL_SECONDS = SUMMARIZATION_TASK_TIME_LIMIT + 60
 
+# De-index task time limits. A run can process DEINDEX_MAX_PER_RUN conversations
+# over HTTP, and the global 180/300 s limits would SIGKILL it mid-run and leave
+# orphan collections. Keep the hard limit below the Redis visibility_timeout of 3600 s.
+DEINDEX_TASK_SOFT_TIME_LIMIT = 1500  # seconds, raises SoftTimeLimitExceeded
+DEINDEX_TASK_TIME_LIMIT = 1800  # seconds, worker is SIGKILLed
+
 # After the triggering turn enqueues the summarization task, how long the
 # wait loop tolerates "no live claim yet" before giving up and failing the
 # turn (covers broker latency and a short worker backlog). Generation stays
@@ -49,3 +55,26 @@ HISTORY_SUMMARY_CLAIM_DEAD_GRACE_SECONDS = 10
 # bounds the DB load per concurrent over-budget turn; summaries take seconds,
 # so a couple-second cadence is responsive enough.
 HISTORY_SUMMARY_POLL_INTERVAL_SECONDS = 2
+
+# How the turn in flight is written to `ChatStreamChunk`. Text is appended
+# often and cheaply, and carries only what is new. A snapshot of the whole turn
+# is appended only when its structure changes - the question, and a tool step
+# once its returns are in the run - because it is the only kind of row that can
+# carry structure and the request the answer belongs to. Rebuilding the turn
+# means taking the last snapshot and adding the text appended after it, so
+# these two numbers bound how much of an answer a turn cut short can lose.
+STREAM_TEXT_FLUSH_INTERVAL_SECONDS = 0.25
+STREAM_TEXT_FLUSH_CHARS = 200
+
+# How long after its last row a turn is still considered to be running. Past
+# it, the chunks are read as what an interrupted turn left behind rather than
+# as an answer still on its way.
+#
+# Must stay comfortably above KEEPALIVE_INTERVAL: a turn blocked on a document
+# parse or a tool call produces nothing for minutes, and what keeps it from
+# reading as abandoned is the beat row the keepalive loop appends on every
+# tick. Below that interval a running turn would look dead, and a turn from
+# another tab would fold and delete its trail from under it. Above it, the only
+# cost is that a turn whose reader vanished keeps looking live for one window,
+# which resolves itself.
+STREAM_LIVE_WINDOW_SECONDS = 120
