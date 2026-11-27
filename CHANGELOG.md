@@ -9,6 +9,9 @@ and this project adheres to
 ## Unreleased — Assistant RH
 
 - Update dnspython and Soup Sieve to clear the staging security scan.
+- Integrate upstream v0.0.29 and preserve RH streaming and source links.
+- Target main for upstream updates and record signed snapshot imports.
+- Preserve quoted CSV headers and reject undefined reciprocal powers.
 
 - ✨(chat) add per-answer RH star ratings and detailed feedback.
 
@@ -66,7 +69,39 @@ and this project adheres to
 - Report revoked delegation as a rights error, throttle local login per
   account and sign out sessions without an audit nonce.
 
+## [0.0.29] - 2026-11-15
+
+### Added
+
+- ✨(front) draw spreadsheet query charts
+- ✨(back) chart spreadsheet query results on request
+- ✨(back) add a calculator tool for exact arithmetic
+- 💬(front) show a calculating label while the calculator runs
+- ✨(back) make the OIDC roles claim name configurable
+- ✨(back) analyze csv and xlsx attachments with a structured query tool
+
+### Removed
+
+- 🔥(helm) remove unused console handler log level variable
+
+### Changed
+
+- ⬆️(back) upgrade python dependencies and fix CVEs
+- ⬆️(front,mail) upgrade dependencies and fix CVEs
+- ♻️(back) split the agent service into turn modules
+- 🔊(back) log structured JSON lines in production
+
+### Fixed
+
+- 💄(front) align the DataGouv item in the input menu
+- 🔒️(back) keep emails, urls and document names out of the logs
+- 🐛(back) store csv uploads detected as plain text as csv
+
 ## [0.0.28] - 2026-11-03
+
+### Changed
+
+- 🔧(renovate) schedule dependency updates on sunday
 
 ### Added
 
@@ -640,8 +675,9 @@ and this project adheres to
 - 💄(chat) add code highlighting for LLM responses #67
 - 🔧(evals) add run_evals management command
 
-[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.28...main
+[unreleased]: https://github.com/suitenumerique/conversations/compare/v0.0.29...main
 
+[0.0.28]: https://github.com/suitenumerique/conversations/compare/v0.0.28...v0.0.29
 [0.0.28]: https://github.com/suitenumerique/conversations/compare/v0.0.27...v0.0.28
 
 [0.0.27]: https://github.com/suitenumerique/conversations/compare/v0.0.26...v0.0.27

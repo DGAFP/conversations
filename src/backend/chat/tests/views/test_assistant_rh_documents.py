@@ -211,10 +211,13 @@ async def test_both_stalled_closers_have_independent_budgets(monkeypatch):
 
 @pytest.mark.parametrize("stream", [False, True])
 def test_chat_stream_persists_server_message_completion_and_final_sources(
-    rh, api_client, respx_mock, stream
+    rh, api_client, respx_mock, monkeypatch, stream
 ):
     """Exercise the real SDK and chat finalization, then reload and forge UI input."""
     rh.settings.LLM_CONFIGURATIONS["assistant-rh-matte"].supports_streaming = stream
+    rh.settings.AUTO_TITLE_AFTER_USER_MESSAGES = 1
+    generate_title = AsyncMock()
+    monkeypatch.setattr("chat.turn.persistence.generate_title", generate_title)
     login(api_client, rh.user)
     chat = ChatConversation.objects.create(
         owner=rh.user, ministry="matte", model_hrid="assistant-rh-matte"
@@ -286,7 +289,10 @@ def test_chat_stream_persists_server_message_completion_and_final_sources(
     )
     wire = b"".join(response.streaming_content).decode()
     assert route.call_count == 1 and "[DONE]" in wire
-    assert route.calls[0].request.headers["accept-encoding"] == "identity"
+    request = route.calls[0].request
+    assert request.headers["accept-encoding"] == "identity"
+    assert not json.loads(request.content).get("tools")
+    generate_title.assert_not_awaited()
     run = AssistantRHMessageRun.objects.get(conversation=chat)
     assert run.completion_id == COMPLETION and run.message_id != "browser-forged-id"
     assert run.sources[0]["doc_ref"] == "private-doc"

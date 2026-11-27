@@ -27,6 +27,7 @@ These are the environment variables you can set for the `conversations-backend` 
 | ATTACHMENT_PARSE_MAX_UNCOMPRESSED_SIZE          | max declared uncompressed size (bytes) for a ZIP-container document (DOCX/XLSX/PPTX/ODT); rejects decompression bombs before parse | 209715200                                               |
 | ATTACHMENT_PARSE_MAX_COMPRESSION_RATIO          | max uncompressed/compressed ratio for a ZIP-container document; rejects suspiciously compressible decompression bombs             | 100                                                     |
 | ATTACHMENT_PARSE_MAX_PDF_PAGES                  | max page count for an in-process PDF parse (AdaptivePdfParser); caps the per-page extract loop                                     | 2000                                                    |
+| TABULAR_JOIN_MAX_CELLS                          | largest join (rows x columns) the spreadsheet analysis may build; larger ones are refused to protect Celery worker memory          | 2000000                                                 |
 | PROJECT_FILES_MAX_COUNT                         | max non-image attachments per project (companion markdown rows excluded). Bounds per-turn system-prompt token cost.               | 10                                                      |
 | PROJECT_IMAGES_MAX_COUNT                        | max image attachments per project. Every image is pinned to every conversation turn; bounds vision-token cost and provider caps.   | 3                                                       |
 | LANGUAGE_CODE                                   | default language                                                                                                                  | en-us                                                   |
@@ -72,6 +73,7 @@ These are the environment variables you can set for the `conversations-backend` 
 | MODEL_HEALTH_POLL_PROVIDER                      | provider polled by celery beat for model health ("" = off; only "albert" exists)                                                  |                                                         |
 | MODEL_HEALTH_POLL_INTERVAL_SECONDS              | seconds between two model-health polls enqueued by beat, min 1 (the command lock still enforces poll_interval_minutes)            | 60                                                      |
 | DEINDEX_INACTIVE_COLLECTIONS_CRON               | five-field cron string for the de-index of inactive RAG collections, evaluated in UTC; both day fields must match when both are restricted ("" = off) |                                                         |
+| TABULAR_RESULTS_PURGE_CRON                      | five-field cron string (UTC) for deleting spreadsheet analysis outputs left unread for an hour ("" = off)                         | `23 * * * *`                                            |
 | SESSION_COOKIE_AGE                              | duration of the cookie session                                                                                                    | 60*60*12                                                |
 | OIDC_CREATE_USER                                | create user on OIDC                                                                                                               | true                                                    |
 | OIDC_RP_SIGN_ALGO                               | verification algorithm used OIDC tokens                                                                                           | RS256                                                   |
@@ -117,8 +119,9 @@ These are the environment variables you can set for the `conversations-backend` 
 | CONVERSION_API_CONTENT_FIELD                    | Conversion api content field                                                                                                      | content                                                 |
 | CONVERSION_API_TIMEOUT                          | Conversion api timeout                                                                                                            | 30                                                      |
 | CONVERSION_API_SECURE                           | Require secure conversion api                                                                                                     | false                                                   |
-| LOGGING_LEVEL_LOGGERS_ROOT                      | default logging level. options are "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"                                                   | INFO                                                    |
-| LOGGING_LEVEL_LOGGERS_APP                       | application logging level. options are "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"                                               | INFO                                                    |
+| LOGGING_LEVEL_LOGGERS_ROOT                      | default logging level (including `chat`), see [logging](logging.md). options are "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"     | INFO                                                    |
+| LOGGING_LEVEL_LOGGERS_APP                       | logging level of the `core` package. options are "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"                                     | INFO                                                    |
+| LOGGING_LEVEL_LOGGERS_SECURITY                  | security events logging level. options are "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"                                           | INFO                                                    |
 | DJANGO_CSRF_TRUSTED_ORIGINS                     | CSRF trusted origins                                                                                                              | []                                                      |
 | REDIS_URL                                       | cache url                                                                                                                         | redis://redis:6379/1                                    |
 | CACHES_DEFAULT_TIMEOUT                          | cache default timeout                                                                                                             | 30                                                      |
@@ -129,7 +132,8 @@ These are the environment variables you can set for the `conversations-backend` 
 | THEME_CUSTOMIZATION_CACHE_TIMEOUT               | Cache duration for the customization settings                                                                                     | 86400                                                   |
 | DOCS_BASE_URL                                   | Base URL of the La Suite Docs instance. Enables the "Edit in Docs" feature (the button only appears when set). Requires `OIDC_STORE_ACCESS_TOKEN=true`. See [Interoperability](interoperabilities.md). |                                                         |
 | DOCS_API_TIMEOUT                                | Timeout (seconds) for HTTP calls to the Docs external API                                                                          | 30                                                      |
-| OIDC_ALLOWED_ROLES                              | Comma-separated roles; restrict login to users whose OIDC `roles` claim contains one of them. Empty disables. See "Access control modes" below. | [] (empty, disabled)                                    |
+| OIDC_ALLOWED_ROLES                              | Comma-separated roles; restrict login to users whose OIDC roles claim (see `OIDC_ROLES_CLAIM`) contains one of them. Empty disables. See "Access control modes" below. | [] (empty, disabled)                                    |
+| OIDC_ROLES_CLAIM                                | Name of the userinfo claim holding the roles checked against `OIDC_ALLOWED_ROLES` (e.g. `proconnect:roles` with Mon compte)      | roles                                                   |
 | API_ATTACHMENT_UPLOAD_THROTTLE_RATE             | Rate limit on the attachment upload endpoint, per user                                                                            | 60/minute                                               |
 | API_ATTACHMENT_AUTH_THROTTLE_RATE               | Rate limit on the attachment authorization endpoint, per user                                                                     | 60/minute                                               |
 | API_FILE_STREAM_THROTTLE_RATE                   | Rate limit on the file streaming endpoint, per user                                                                               | 60/minute                                               |
@@ -163,8 +167,8 @@ variable when both are set.
 
 Access can be gated on the OIDC role claim:
 
-- **OIDC role** (`OIDC_ALLOWED_ROLES=<role>`): only users whose OIDC `roles` claim
-  contains one of the listed roles can sign in; everyone else is redirected to the
+- **OIDC role** (`OIDC_ALLOWED_ROLES=<role>`): only users whose OIDC roles claim
+  (`roles` by default, set by `OIDC_ROLES_CLAIM`) contains one of the listed roles can sign in; everyone else is redirected to the
   access-denied page. As a fallback, addresses on the access-bypass email allow-list
   (Django admin, *Access bypass emails*) are let in without the role. The role is
   re-checked on every login, so revoking it in the IdP blocks the user immediately.

@@ -3,7 +3,6 @@ Declare and configure the models for the conversations core application
 """
 
 import uuid
-from logging import getLogger
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -14,12 +13,13 @@ from django.utils import timezone
 from django.utils.crypto import salted_hmac
 from django.utils.translation import gettext_lazy as _
 
+import structlog
 from solo.models import SingletonModel
 from timezone_field import TimeZoneField
 
 from core.assistant_rh import MINISTRIES
 
-logger = getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Revoking either flag rotates the session version; stale saves must not undo it.
 ACCESS_FIELDS = ("is_active", "assistant_rh_admitted")
@@ -422,10 +422,7 @@ class MaintenanceMode(SingletonModel):
             previous = None
         super().save(*args, **kwargs)
         if previous is not None and previous != self.enabled:
-            logger.warning(
-                "maintenance mode %s (singleton)",
-                "ENABLED" if self.enabled else "DISABLED",
-            )
+            logger.warning("maintenance_mode_toggled", enabled=self.enabled)
 
     class Meta:
         verbose_name = _("Maintenance Mode")

@@ -40,7 +40,13 @@ from chat.llm_configuration import cached_load_llm_configuration, load_llm_confi
 from conversations.assistant_rh_settings import AssistantRHSettings
 from conversations.brave_settings import BraveSettings
 from conversations.celery_settings import CelerySettings
-from conversations.observability_settings import ObservabilitySettings, scrub_transaction_queries
+from conversations.observability_settings import (
+    ObservabilitySettings,
+    configure_structlog,
+    scrub_sentry_breadcrumb,
+    scrub_sentry_event,
+    scrub_transaction_queries,
+)
 from conversations.oidc_settings import OIDCSettings
 from conversations.prometheus_settings import PrometheusSettings
 from conversations.staan_settings import StaanSettings
@@ -220,6 +226,13 @@ class Base(
         environ_name="ATTACHMENT_PARSE_MAX_PDF_PAGES",
         environ_prefix=None,
     )
+    # Largest join (rows x columns) the spreadsheet analysis may build. Joining on a
+    # repeated column multiplies rows, and the worker's memory is shared by every task.
+    TABULAR_JOIN_MAX_CELLS = values.PositiveIntegerValue(
+        default=2_000_000,
+        environ_name="TABULAR_JOIN_MAX_CELLS",
+        environ_prefix=None,
+    )
     FILE_UPLOAD_MODE = values.Value(
         FileUploadMode.PRESIGNED_URL,
         environ_name="FILE_UPLOAD_MODE",
@@ -328,6 +341,8 @@ class Base(
         "posthog.integrations.django.PosthogContextMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
         "dockerflow.django.middleware.DockerflowMiddleware",
+        # After Dockerflow, which answers the heartbeat probes: those stay unlogged.
+        "core.middleware.RequestLogMiddleware",
         "csp.middleware.CSPMiddleware",
         "axes.middleware.AxesMiddleware",
     ]
@@ -390,6 +405,7 @@ class Base(
         "corsheaders",
         "django_filters",
         "dockerflow.django",
+        "django_structlog",
         "rest_framework",
         "solo.apps.SoloAppConfig",
         "csp",
@@ -415,7 +431,7 @@ class Base(
 
     REST_FRAMEWORK = {
         "DEFAULT_AUTHENTICATION_CLASSES": (
-            "mozilla_django_oidc.contrib.drf.OIDCAuthentication",
+            "core.authentication.drf.LoggedOIDCAuthentication",
             "rest_framework.authentication.SessionAuthentication",
         ),
         "DEFAULT_PARSER_CLASSES": [
@@ -1177,6 +1193,8 @@ class Base(
         """
         super().post_setup()
 
+        configure_structlog()
+
         # The SENTRY_DSN setting should be available to activate sentry for an environment
         if cls.SENTRY_DSN is not None:
             sentry_sdk.init(
@@ -1188,12 +1206,14 @@ class Base(
                 max_request_body_size="never",
                 include_local_variables=False,
                 traces_sample_rate=cls.SENTRY_TRACES_SAMPLE_RATE,
+                before_send=scrub_sentry_event,
+                before_breadcrumb=scrub_sentry_breadcrumb,
                 before_send_transaction=scrub_transaction_queries,
             )
             sentry_sdk.set_tag("application", "backend")
 
-            # Ignore the logs added by the DockerflowMiddleware
-            ignore_logger("request.summary")
+            # Ignore the request logs: Sentry already captures failed requests
+            ignore_logger("django_structlog.middlewares.request")
 
         # Enable Posthog if the key is set
         if cls.POSTHOG_KEY:
@@ -1422,7 +1442,7 @@ class Test(Base):
     # -- DRF / OpenAPI ---------------------------------------------------------
     REST_FRAMEWORK = {
         "DEFAULT_AUTHENTICATION_CLASSES": (
-            "mozilla_django_oidc.contrib.drf.OIDCAuthentication",
+            "core.authentication.drf.LoggedOIDCAuthentication",
             "rest_framework.authentication.SessionAuthentication",
         ),
         "DEFAULT_PARSER_CLASSES": [
@@ -1475,16 +1495,12 @@ class Test(Base):
     LOGGING = {
         "version": 1,
         "disable_existing_loggers": False,
-        "formatters": {
-            "simple": {
-                "format": "{asctime} {name} {levelname} {message}",
-                "style": "{",
-            },
-        },
+        "formatters": Base.LOGGING["formatters"],
+        "filters": Base.LOGGING["filters"],
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
-                "formatter": "simple",
+                "formatter": "console",
             },
         },
         "root": {
@@ -1507,6 +1523,7 @@ class Test(Base):
             # Set here rather than relying on langfuse doing it for httpx on import.
             "httpx": {"level": "WARNING"},
             "httpx2": {"level": "WARNING"},
+            "django.request": Base.LOGGING["loggers"]["django.request"],
         },
     }
 
@@ -1609,6 +1626,12 @@ class Production(Base):
 
     # Privacy
     SECURE_REFERRER_POLICY = "same-origin"
+
+    # JSON lines so Loki can filter on fields
+    LOGGING = {
+        **Base.LOGGING,
+        "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "json"}},
+    }
 
     CACHES = {
         "default": {

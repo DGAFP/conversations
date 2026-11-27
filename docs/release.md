@@ -1,5 +1,21 @@
 # Releasing a new version
 
+## DGAFP upstream updates
+
+Upstream updates target `main`. The sync job reads upstream tags from
+`refs/upstream/tags/*`, separately from DGAFP release tags, and opens one update
+PR at a time. Existing RH integration branches also prevent duplicate PRs.
+
+Signed snapshot imports record the reviewed upstream tag and exact commit in
+`.github/scripts/upstream-release.json`. The job checks that pair against the
+fetched upstream tag and uses its ancestry to recognize earlier releases, even
+when their original unsigned commits could not enter protected `main`.
+Update this record when importing a newer snapshot; preserve the intervening RH
+changes and validate the resulting tree before merging. A merge on `main` does
+not publish Kapsule images or trigger its staging deployment.
+
+## Upstream release procedure
+
 Whenever we are cooking a new release (e.g. `4.18.1`), we should follow the standard procedure described below:
 
 
