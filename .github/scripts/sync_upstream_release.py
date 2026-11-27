@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Open one pull request for the oldest upstream release missing from main."""
+"""Open one pull request for the oldest upstream release missing from staging."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 UPSTREAM_REPOSITORY = "suitenumerique/conversations"
-BASE_BRANCH = "main"
+BASE_BRANCH = "staging"
 BRANCH_PREFIX = "upstream-release/"
 
 logger = logging.getLogger(__name__)
@@ -55,12 +55,16 @@ def gh_paginated(endpoint: str) -> list[dict]:
 
 
 def find_open_sync_pull_request(repository: str) -> str | None:
-    pulls = gh_paginated(f"repos/{repository}/pulls?state=open&per_page=100")
+    pulls = gh_paginated(
+        f"repos/{repository}/pulls?state=open&base={BASE_BRANCH}&per_page=100"
+    )
+    branches = (pull["head"]["ref"] for pull in pulls)
     return next(
         (
-            pull["head"]["ref"]
-            for pull in pulls
-            if pull["head"]["ref"].startswith(BRANCH_PREFIX)
+            branch
+            for branch in branches
+            if branch.startswith(BRANCH_PREFIX)
+            or (branch.startswith("chore/upstream-") and branch.endswith("-rh-integration"))
         ),
         None,
     )
@@ -76,7 +80,7 @@ def list_published_releases() -> list[Release]:
 
 
 def is_release_integrated(tag_name: str) -> bool:
-    """A release is integrated when its tagged commit is an ancestor of main."""
+    """A release is integrated when its tagged commit is an ancestor of staging."""
     result = git(
         "merge-base",
         "--is-ancestor",
@@ -153,7 +157,7 @@ def main() -> int:
 
     upstream_url = f"https://github.com/{UPSTREAM_REPOSITORY}.git"
     git("remote", "add", "upstream", upstream_url)
-    git("fetch", "--tags", "upstream", BASE_BRANCH)
+    git("fetch", "--tags", "upstream", "main")
     git("fetch", "origin", BASE_BRANCH)
 
     release = find_next_missing_release(
@@ -164,7 +168,7 @@ def main() -> int:
         return 0
 
     conflicted_paths: list[str] = []
-    branch = f"{BRANCH_PREFIX}{release.tag_name}"
+    branch = f"{BRANCH_PREFIX}{BASE_BRANCH}/{release.tag_name}"
     if remote_branch_exists(branch):
         logger.info("Reusing existing release branch: %s", branch)
         git(

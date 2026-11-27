@@ -3,7 +3,6 @@
 import json
 
 import pytest
-import respx
 from freezegun import freeze_time
 
 from chat.agents.conversation import PREVENT_URL_HALLUCINATION_INSTRUCTION
@@ -41,7 +40,7 @@ def settings_with_concatenation(settings):
     return settings
 
 
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 @pytest.mark.parametrize(
     ("conversation_in_project", "expected_system_message"),
     (
@@ -64,7 +63,6 @@ def settings_with_concatenation(settings):
         ],
     ),
 )
-@respx.mock
 def test_post_conversation_concatenate(
     api_client,
     hello_conversation_data,

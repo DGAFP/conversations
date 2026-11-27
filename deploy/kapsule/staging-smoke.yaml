@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: '{{ .Release.Name }}-staging-smoke'
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 120
+  automountServiceAccountToken: false
+  imagePullSecrets:
+  - name: scw-registry
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: health
+    image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+    command:
+    - python
+    - -c
+    - 'import json,sys,urllib.request; r=urllib.request.urlopen("http://conversations-backend/__heartbeat__",timeout=10);
+      assert r.status==200; r=urllib.request.urlopen("http://conversations-frontend/",timeout=10);
+      assert r.status==200; req=urllib.request.Request("http://conversations-backend/api/v1.0/config/",headers={"X-Forwarded-Proto":"https"});
+      config=json.load(urllib.request.urlopen(req,timeout=10)); assert isinstance(config,dict);
+      sys.stdout.write("Conversations backend/frontend/config: OK\n")'
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 128Mi

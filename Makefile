@@ -151,6 +151,10 @@ logs: ## display app-dev logs (follow mode)
 	@$(COMPOSE) logs -f app-dev
 .PHONY: logs
 
+logs-turn: ## follow app-dev logs, keeping only one chat turn's trace
+	@$(COMPOSE) logs -f --no-log-prefix app-dev | grep --line-buffered "chat.turn"
+.PHONY: logs-turn
+
 run-backend: ## Start only the backend application and all needed services
 	@$(COMPOSE) up --force-recreate -d nginx app-dev celery-dev
 .PHONY: run-backend
@@ -264,7 +268,7 @@ deindex_inactive_collections: ## run the deindex_inactive_collections management
 	@$(MANAGE) deindex_inactive_collections
 .PHONY: deindex_inactive_collections
 
-fetch_model_health: ## check the health of the models (usage: make fetch_model_health FETCH_MODEL_HEALTH_ARGS="--provider albert")
+fetch_model_health: ## run fetch_model_health once (celery beat schedules it in deployments; usage: make fetch_model_health FETCH_MODEL_HEALTH_ARGS="--provider albert")
 	@$(MANAGE) fetch_model_health $(FETCH_MODEL_HEALTH_ARGS)
 .PHONY: fetch_model_health
 

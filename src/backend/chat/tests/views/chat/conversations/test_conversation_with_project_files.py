@@ -76,7 +76,7 @@ def _mock_albert_search(content="The project doc says hello.", document_name="pr
 
 
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_searches_project_collection(
     api_client,
     mock_ai_agent_service,
@@ -128,7 +128,7 @@ def test_post_conversation_searches_project_collection(
 
 
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_searches_both_collections_when_conversation_has_own(
     api_client,
     mock_ai_agent_service,
@@ -204,7 +204,7 @@ def _inlineable_llm_config_fixture(settings):
 
 
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_inlines_convo_doc_while_project_doc_stays_rag_only(
     api_client,
     mock_ai_agent_service,
@@ -321,7 +321,7 @@ def test_post_conversation_blocked_while_project_file_scanning(api_client):
 
 
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_not_blocked_by_stale_scanning_file(
     api_client,
     settings,
@@ -364,7 +364,7 @@ def test_post_conversation_not_blocked_by_stale_scanning_file(
 
 
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_not_blocked_by_terminal_suspicious_file(
     api_client,
     hello_conversation_data,
@@ -398,7 +398,7 @@ def test_post_conversation_not_blocked_by_terminal_suspicious_file(
 
 
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_not_blocked_while_project_file_indexing(
     api_client,
     hello_conversation_data,
@@ -435,7 +435,7 @@ def test_post_conversation_not_blocked_while_project_file_indexing(
 
 
 @respx.mock
-@freeze_time("2025-07-25T10:36:35.297675Z")
+@freeze_time("2025-07-25T10:36:35.297675Z", real_asyncio=True)
 def test_post_conversation_does_not_register_rag_for_project_with_only_images(
     api_client,
     hello_conversation_data,

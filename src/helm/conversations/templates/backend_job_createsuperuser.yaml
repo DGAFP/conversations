@@ -1,3 +1,4 @@
+{{- if .Values.backend.createsuperuser.enabled }}
 {{- $envVars := include "conversations.common.env" (list . .Values.backend) -}}
 {{- $fullName := include "conversations.backend.fullname" . -}}
 {{- $component := "backend-createsuperuser" -}}
@@ -49,6 +50,10 @@ spec:
             {{- if $envVars}}
             {{- $envVars | indent 12 }}
             {{- end }}
+          {{- with $.Values.backend.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.backend.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -117,6 +122,9 @@ spec:
           {{- else if .csi }}
           csi:
             {{- toYaml .csi | nindent 12 }}
+          {{- else if .secret }}
+          secret:
+            {{- toYaml .secret | nindent 12 }}
           {{- else if .configMap }}
           configMap:
             {{- toYaml .configMap | nindent 12 }}
@@ -132,3 +140,5 @@ spec:
           configMap:
             name: conversations-llm-configuration
         {{- end }}
+
+{{- end }}

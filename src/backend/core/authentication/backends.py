@@ -2,16 +2,19 @@
 
 import logging
 import re
+import time
 
 from django.conf import settings
-from django.core.exceptions import SuspiciousOperation
+from django.core.exceptions import SuspiciousOperation, ValidationError
 
+import jwt
 from lasuite.oidc_login.backends import (
     OIDCAuthenticationBackend as LaSuiteOIDCAuthenticationBackend,
 )
 
+from core.authentication import invitations
 from core.brevo import add_user_to_brevo_list
-from core.models import AccessBypassEmail, DuplicateEmailError
+from core.models import AccessBypassEmail, AssistantRHInvitation, DuplicateEmailError
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,75 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
     This class overrides the default OIDC Authentication Backend to accommodate differences
     in the User and Identity models, and handles signed and/or encrypted UserInfo response.
     """
+
+    def store_tokens(self, access_token, id_token):
+        """With invitations enabled, defer storage until the identity has been admitted."""
+        if not invitations.enabled():
+            super().store_tokens(access_token, id_token)
+
+    def get_or_create_user(self, access_token, id_token, payload):
+        """Preserve the current session's tokens when a different identity is refused."""
+        user = super().get_or_create_user(access_token, id_token, payload)
+        if user is not None and invitations.enabled():
+            super().store_tokens(access_token, id_token)
+        return user
+
+    def verify_token(self, token, **kwargs):
+        """Keep upstream signature/nonce verification and enforce the RH token audience."""
+        try:
+            payload = super().verify_token(token, **kwargs)
+        except jwt.InvalidTokenError as exc:
+            if not (settings.ASSISTANT_RH_ENABLED and settings.ASSISTANT_RH_OIDC_ENABLED):
+                raise
+            # Mozilla OIDC now validates claims with PyJWT; these failures must
+            # follow the same authentication refusal path as our RH checks.
+            raise SuspiciousOperation("Invalid OIDC token claims.") from exc
+        if not (settings.ASSISTANT_RH_ENABLED and settings.ASSISTANT_RH_OIDC_ENABLED):
+            return payload
+        now = time.time()
+        audience = payload.get("aud")
+        audiences = [audience] if isinstance(audience, str) else audience
+        valid_audience = (
+            isinstance(audiences, list)
+            and bool(audiences)
+            and all(isinstance(item, str) for item in audiences)
+            and self.OIDC_RP_CLIENT_ID in audiences
+        )
+        # Python bool is an int subclass; require actual JSON integers for dates.
+        # pylint: disable=unidiomatic-typecheck
+        valid_dates = (
+            type(payload.get("exp")) is int
+            and type(payload.get("iat")) is int
+            and payload["exp"] > now - 30
+            and payload["iat"] <= now + 30
+            and payload["exp"] > payload["iat"]
+            and (
+                "nbf" not in payload or (type(payload["nbf"]) is int and payload["nbf"] <= now + 30)
+            )
+        )
+        # pylint: enable=unidiomatic-typecheck
+        authorized_party = payload.get("azp")
+        valid_party = authorized_party in (None, self.OIDC_RP_CLIENT_ID) and (
+            not valid_audience or len(audiences) == 1 or authorized_party == self.OIDC_RP_CLIENT_ID
+        )
+        if not (
+            payload.get("iss") == settings.OIDC_OP_URL
+            and isinstance(payload.get("sub"), str)
+            and bool(payload["sub"])
+            and valid_audience
+            and valid_dates
+            and valid_party
+        ):
+            raise SuspiciousOperation("Invalid OIDC token claims.")
+        return payload
+
+    def get_userinfo(self, access_token, id_token, payload):
+        """UserInfo must identify the same subject as the verified ID token."""
+        userinfo = super().get_userinfo(access_token, id_token, payload)
+        if settings.ASSISTANT_RH_ENABLED and settings.ASSISTANT_RH_OIDC_ENABLED:
+            if userinfo.get("sub") != payload.get("sub"):
+                raise SuspiciousOperation("OIDC subject mismatch.")
+        return userinfo
 
     def get_extra_claims(self, user_info):
         """
@@ -119,6 +191,17 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         This allows to enable analytics by default during the alpha version and get
         more information about the usage of the application.
         """
+        if invitations.enabled():
+            try:
+                email = invitations.normalize_email(claims.get("email"))
+            except ValidationError:
+                email = None
+            if email and AssistantRHInvitation.objects.filter(email=email).exists():
+                raise invitations.InvitationRequired({**claims, "email": email})
+        return self.create_oidc_user(claims)
+
+    def create_oidc_user(self, claims):
+        """Persist an OIDC identity using the normal profile defaults."""
         return super().create_user(
             claims
             | {

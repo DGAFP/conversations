@@ -74,18 +74,44 @@ class ReleaseSelectionTests(unittest.TestCase):
         git.side_effect = [completed(0), completed(1), completed(128, stderr="bad tag")]
 
         self.assertTrue(sync.is_release_integrated("v0.0.1"))
+        git.assert_called_with(
+            "merge-base", "--is-ancestor", "v0.0.1^{commit}", "origin/staging", check=False
+        )
         self.assertFalse(sync.is_release_integrated("v0.0.2"))
         with self.assertRaisesRegex(RuntimeError, "bad tag"):
             sync.is_release_integrated("v0.0.3")
 
 
 class MainTests(unittest.TestCase):
+    @patch("sync_upstream_release.gh_paginated")
+    def test_staging_draft_for_manual_upgrade_blocks_duplicate(self, paginated):
+        paginated.return_value = [
+            {"head": {"ref": "feat/assistant-rh-scaleway-tem"}},
+            {"head": {"ref": "chore/upstream-v0.0.29-rh-integration"}, "draft": True},
+        ]
+
+        self.assertEqual(
+            sync.find_open_sync_pull_request("DGAFP/conversations"),
+            "chore/upstream-v0.0.29-rh-integration",
+        )
+        paginated.assert_called_once_with(
+            "repos/DGAFP/conversations/pulls?state=open&base=staging&per_page=100"
+        )
+
+    @patch("sync_upstream_release.gh_paginated")
+    def test_automation_branch_is_recognized(self, paginated):
+        paginated.return_value = [{"head": {"ref": "upstream-release/v0.0.29"}}]
+
+        self.assertEqual(
+            sync.find_open_sync_pull_request("DGAFP/conversations"), "upstream-release/v0.0.29"
+        )
+
     @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
     @patch("sync_upstream_release.list_published_releases")
     @patch("sync_upstream_release.git")
     @patch(
         "sync_upstream_release.find_open_sync_pull_request",
-        return_value="upstream-release/v0.0.25",
+        return_value="upstream-release/staging/v0.0.25",
     )
     def test_open_sync_pr_prevents_all_git_and_release_work(
         self, find_open, git, list_releases
@@ -130,15 +156,24 @@ class MainTests(unittest.TestCase):
 
         self.assertEqual(sync.main(), 0)
 
-        git.assert_any_call("switch", "-c", "upstream-release/v0.0.25", "origin/main")
+        git.assert_any_call("fetch", "--tags", "upstream", "main")
+        git.assert_any_call("fetch", "origin", "staging")
         git.assert_any_call(
-            "push", "--set-upstream", "origin", "upstream-release/v0.0.25"
+            "ls-remote", "--exit-code", "--heads", "origin", "upstream-release/staging/v0.0.25",
+            check=False,
+        )
+        git.assert_any_call(
+            "switch", "-c", "upstream-release/staging/v0.0.25", "origin/staging"
+        )
+        git.assert_any_call(
+            "push", "--set-upstream", "origin", "upstream-release/staging/v0.0.25"
         )
         arguments = gh.call_args.args
         self.assertEqual(arguments[:2], ("pr", "create"))
+        self.assertEqual(arguments[arguments.index("--base") + 1], "staging")
         self.assertIn("chore: merge upstream release v0.0.25", arguments)
         self.assertNotIn("chore: merge upstream release v0.0.25 (conflicts)", arguments)
-        self.assertIn("upstream-release/v0.0.25", arguments)
+        self.assertIn("upstream-release/staging/v0.0.25", arguments)
 
     @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
     @patch("sync_upstream_release.gh")
@@ -173,7 +208,7 @@ class MainTests(unittest.TestCase):
         body = arguments[arguments.index("--body") + 1]
         self.assertIn("- `app.py`", body)
         self.assertIn("- `package.json`", body)
-        self.assertIn("git merge origin/main", body)
+        self.assertIn("git merge origin/staging", body)
 
     @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
     @patch("sync_upstream_release.gh")
@@ -221,8 +256,8 @@ class MainTests(unittest.TestCase):
         git.assert_any_call(
             "fetch",
             "origin",
-            "refs/heads/upstream-release/v0.0.25:"
-            "refs/remotes/origin/upstream-release/v0.0.25",
+            "refs/heads/upstream-release/staging/v0.0.25:"
+            "refs/remotes/origin/upstream-release/staging/v0.0.25",
         )
         self.assertFalse(
             any(call.args and call.args[0] == "push" for call in git.call_args_list)

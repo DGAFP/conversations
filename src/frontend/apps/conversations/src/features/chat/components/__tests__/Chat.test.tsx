@@ -16,7 +16,7 @@ import { ToastProvider } from '@/components/ToastProvider';
 import { getConversation } from '@/features/chat/api/useConversation';
 import { usePendingChatStore } from '@/features/chat/stores/usePendingChatStore';
 
-import { Chat } from '../Chat';
+import { Chat, REMOTE_STREAM_POLL_MS } from '../Chat';
 
 // jsdom implements no scrolling; the component scrolls to the latest message.
 Element.prototype.scrollTo = () => {};
@@ -56,13 +56,15 @@ vi.mock('rehype-katex', () => ({ default: () => {} }));
 vi.mock('remark-gfm', () => ({ default: () => {} }));
 vi.mock('remark-math', () => ({ default: () => {} }));
 
+const mockConfig: { ASSISTANT_RH_ENABLED?: boolean } = {};
+
 vi.mock('@/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/core')>()),
-  useConfig: () => ({ data: {} }),
+  useConfig: () => ({ data: mockConfig }),
 }));
 vi.mock('@/core/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/core/config')>()),
-  useConfig: () => ({ data: {} }),
+  useConfig: () => ({ data: mockConfig }),
 }));
 vi.mock('@/features/chat/api/useAssistantHealth', () => ({
   useAssistantHealth: () => ({ data: undefined }),
@@ -87,7 +89,7 @@ vi.mock('@/features/attachments/hooks/useUploadFile', () => ({
   }),
 }));
 vi.mock('@/features/sources-panel', () => ({
-  useSourcePanelAnchor: () => null,
+  useSourcePanelAnchor: () => document.getElementById('test-sources-panel'),
   SourcePanel: () => null,
 }));
 
@@ -168,6 +170,113 @@ const ask = async (text: string) => {
   await userEvent.type(box, text);
   await userEvent.keyboard('{Enter}');
 };
+
+describe('a turn that runs without us', () => {
+  const fetchAPIMock = vi.mocked(fetchAPI) as unknown as Mock;
+  const getConversationMock = vi.mocked(getConversation) as unknown as Mock;
+
+  const QUESTION = {
+    id: 'server-u1',
+    role: 'user' as const,
+    parts: [{ type: 'text' as const, text: 'A question' }],
+  };
+  const CHECKPOINT = {
+    id: 'server-a1',
+    role: 'assistant' as const,
+    parts: [{ type: 'text' as const, text: 'Half an' }],
+    metadata: { interrupted: true },
+  };
+  const FINAL_ANSWER = {
+    id: 'server-a1',
+    role: 'assistant' as const,
+    parts: [{ type: 'text' as const, text: 'Half an answer, then the rest.' }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    usePendingChatStore.setState({ input: '', files: null });
+    fetchAPIMock.mockImplementation((url: string) => {
+      if (url.startsWith('chat-cooldown')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ cooldown_seconds: 0 }),
+        });
+      }
+      return Promise.resolve({ ok: true, body: streamOf(ANSWER_STREAM) });
+    });
+  });
+
+  it('waits on a checkpoint the backend still reports as streaming', async () => {
+    getConversationMock.mockResolvedValue({
+      messages: [QUESTION, CHECKPOINT],
+      is_streaming: true,
+    });
+
+    renderChat();
+
+    expect(await screen.findByText('Thinking...')).toBeInTheDocument();
+    // The same checkpoint would otherwise be called interrupted: it is only
+    // the final word once the turn behind it is over.
+    expect(screen.queryByTestId('interrupted-answer')).not.toBeInTheDocument();
+  });
+
+  it('shows the finished answer once the turn ends', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      getConversationMock
+        .mockResolvedValueOnce({
+          messages: [QUESTION, CHECKPOINT],
+          is_streaming: true,
+        })
+        .mockResolvedValue({
+          messages: [QUESTION, FINAL_ANSWER],
+          is_streaming: false,
+        });
+
+      renderChat();
+
+      expect(await screen.findByText('Thinking...')).toBeInTheDocument();
+
+      await vi.advanceTimersByTimeAsync(REMOTE_STREAM_POLL_MS);
+
+      await waitFor(() =>
+        expect(screen.queryByText('Thinking...')).not.toBeInTheDocument(),
+      );
+      expect(messageTexts()).toEqual([
+        'You said: A question',
+        'Assistant IA replied: Half an answer, then the rest.',
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('offers to stop a turn running without us, not to send into it', async () => {
+    getConversationMock.mockResolvedValue({
+      messages: [QUESTION, CHECKPOINT],
+      is_streaming: true,
+    });
+
+    renderChat();
+
+    // Stop works on a turn this client is not streaming: it asks the backend
+    // to stop, so showing it is not an empty promise.
+    expect(await screen.findByLabelText('Stop')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Send')).not.toBeInTheDocument();
+  });
+
+  it('calls a checkpoint interrupted once nothing is streaming', async () => {
+    getConversationMock.mockResolvedValue({
+      messages: [QUESTION, CHECKPOINT],
+      is_streaming: false,
+    });
+
+    renderChat();
+
+    expect(await screen.findByTestId('interrupted-answer')).toBeInTheDocument();
+    expect(screen.queryByText('Thinking...')).not.toBeInTheDocument();
+  });
+});
 
 describe('Chat message ownership', () => {
   const fetchAPIMock = vi.mocked(fetchAPI) as unknown as Mock;
@@ -334,6 +443,137 @@ describe('Chat message ownership', () => {
         'Assistant IA replied: An answer.',
       ]),
     );
+  });
+});
+
+describe('RH sources panel', () => {
+  const sourceMessage = {
+    id: 'rh-answer',
+    role: 'assistant' as const,
+    parts: [{ type: 'text' as const, text: 'Réponse RH.' }],
+    metadata: {
+      assistant_rh: {
+        sources: [
+          {
+            title: 'Guide RH',
+            publisher: 'DGAFP',
+            access: 'authenticated',
+            url: '/api/v1.0/chats/conv-1/messages/rh-answer/sources/0/',
+          },
+          {
+            title: 'Article public',
+            publisher: 'Service-Public',
+            access: 'public',
+            url: 'https://www.service-public.fr/particuliers/vosdroits/F1',
+          },
+        ],
+      },
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConfig.ASSISTANT_RH_ENABLED = true;
+    usePendingChatStore.setState({ input: '', files: null });
+    const anchor = document.createElement('div');
+    anchor.id = 'test-sources-panel';
+    document.body.appendChild(anchor);
+    vi.mocked(getConversation).mockResolvedValue({
+      messages: [sourceMessage],
+    } as Awaited<ReturnType<typeof getConversation>>);
+  });
+
+  afterEach(() => {
+    mockConfig.ASSISTANT_RH_ENABLED = false;
+    document.getElementById('test-sources-panel')?.remove();
+  });
+
+  it('opens restored sources in the panel and closes it with its close button', async () => {
+    renderChat();
+    const toggle = await screen.findByRole('button', {
+      name: 'Show 2 sources',
+    });
+    expect(
+      screen.queryByRole('link', { name: 'Guide RH — nouvel onglet' }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(toggle);
+    expect(
+      screen.getByRole('heading', { name: '2 Sources' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Guide RH — nouvel onglet' }),
+    ).toHaveAttribute(
+      'href',
+      expect.stringContaining('/messages/rh-answer/sources/0/'),
+    );
+    expect(
+      screen.getByRole('link', { name: 'Article public — nouvel onglet' }),
+    ).toHaveAttribute('target', '_blank');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Close sources panel' }),
+    );
+    expect(
+      screen.queryByRole('link', { name: 'Guide RH — nouvel onglet' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Show 2 sources' }),
+    ).toBeInTheDocument();
+  });
+
+  it('switches the panel to the selected answer and toggles it closed', async () => {
+    vi.mocked(getConversation).mockResolvedValue({
+      messages: [
+        sourceMessage,
+        {
+          ...sourceMessage,
+          id: 'other-answer',
+          metadata: {
+            assistant_rh: {
+              sources: [
+                {
+                  ...sourceMessage.metadata.assistant_rh.sources[1],
+                  title: 'Autre article',
+                },
+              ],
+            },
+          },
+        },
+      ],
+    } as Awaited<ReturnType<typeof getConversation>>);
+    renderChat();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Show 2 sources' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Show 1 source' }),
+    );
+    expect(
+      screen.getByRole('heading', { name: '1 Source' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Autre article — nouvel onglet' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Guide RH — nouvel onglet' }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Hide source' }));
+    expect(
+      screen.queryByRole('heading', { name: '1 Source' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the unavailable state for legacy answers inside the panel', async () => {
+    vi.mocked(getConversation).mockResolvedValue({
+      messages: [{ ...sourceMessage, metadata: undefined }],
+    } as Awaited<ReturnType<typeof getConversation>>);
+    renderChat();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Show sources' }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Références documentaires indisponibles',
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });
 

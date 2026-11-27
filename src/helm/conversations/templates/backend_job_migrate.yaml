@@ -14,6 +14,9 @@ metadata:
   labels:
     {{- include "conversations.common.labels" (list . $component) | nindent 4 }}
 spec:
+  {{- with .Values.backend.jobs.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ . }}
+  {{- end }}
   ttlSecondsAfterFinished: {{ .Values.backend.jobs.ttlSecondsAfterFinished }}
   backoffLimit: {{ .Values.backend.jobs.backoffLimit }}
   template:
@@ -49,6 +52,10 @@ spec:
             {{- if $envVars}}
             {{- $envVars | indent 12 }}
             {{- end }}
+          {{- with $.Values.backend.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.backend.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -117,6 +124,9 @@ spec:
           {{- else if .csi }}
           csi:
             {{- toYaml .csi | nindent 12 }}
+          {{- else if .secret }}
+          secret:
+            {{- toYaml .secret | nindent 12 }}
           {{- else if .configMap }}
           configMap:
             {{- toYaml .configMap | nindent 12 }}

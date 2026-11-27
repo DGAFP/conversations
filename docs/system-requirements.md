@@ -67,7 +67,8 @@ Production deployments differ significantly from development environments. The t
 
 | Tool                    | Minimum |
 |-------------------------|---------|
-| Docker Engine / Desktop | 24.0    |
+| Docker Engine           | 28.0    |
+| Docker Desktop          | 4.39    |
 | Docker Compose          | v2      |
 | Git                     | 2.40    |
 | **Node.js**             | 22+     |
@@ -78,19 +79,20 @@ Production deployments differ significantly from development environments. The t
 | kubectl                 | 1.29    |
 | mkcert                  | 1.4     |
 
+Docker Engine 28.0 is required for the dev stack: older versions let other hosts on the local network reach ports bound to `127.0.0.1`.
+
 
 ## 5. Ports (dev defaults)
 
-| Port      | Service                    |
-|-----------|----------------------------|
-| 3000      | Vite dev server            |
-| 8071      | Django                     |
-| 8080      | Keycloak                   |
-| 8083      | Nginx proxy                |
-| 9000/9001 | MinIO                      |
-| 15432     | PostgreSQL (main)          |
-| 5433      | PostgreSQL (Keycloak)      |
-| 1081      | Maildev (currently unused) |
+| Port      | Service                        |
+|-----------|--------------------------------|
+| 3000      | Vite dev server                |
+| 8071      | Django                         |
+| 8080      | Keycloak                       |
+| 8083      | Nginx proxy                    |
+| 9000/9001 | MinIO                          |
+| 15432     | PostgreSQL (main)              |
+| 1081      | MailCatcher (currently unused) |
 
 ## 6. Sizing Guidelines
 
