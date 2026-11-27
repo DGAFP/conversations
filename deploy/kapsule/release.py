@@ -644,11 +644,21 @@ def complete(manifest):
         f"deployments/{manifest['deployment_id']}/statuses",
         {"state": "success", "auto_inactive": False},
     )
-    if manifest.get("supersedes_deployment_id"):
+    previous = manifest.get("supersedes_deployment_id")
+    seen = {manifest["deployment_id"]}
+    while previous:
+        if previous in seen:
+            raise RuntimeError("Cyclic deployment recovery chain")
+        seen.add(previous)
+        deployment = api(f"deployments/{previous}")
+        payload = deployment.get("payload") or {}
+        if payload.get("coordinator") != "tagged-release-v1":
+            raise RuntimeError("Unexpected predecessor in deployment recovery chain")
         api(
-            f"deployments/{manifest['supersedes_deployment_id']}/statuses",
+            f"deployments/{previous}/statuses",
             {"state": "inactive", "auto_inactive": False},
         )
+        previous = payload.get("recovery_of")
 
 
 def ready(resource):

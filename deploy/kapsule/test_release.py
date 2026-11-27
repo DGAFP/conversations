@@ -40,6 +40,30 @@ def manifest(tag="v0.1.0-rc.1", target="staging"):
 
 
 class ReleaseTest(unittest.TestCase):
+    @patch.object(delivery, "api")
+    def test_successful_recovery_resolves_the_full_failed_deployment_chain(self, api):
+        def response(path, data=None):
+            if path == "deployments/2":
+                return {"payload": {"coordinator": "tagged-release-v1", "recovery_of": 1}}
+            if path == "deployments/1":
+                return {"payload": {"coordinator": "tagged-release-v1"}}
+
+        api.side_effect = response
+        delivery.complete({"deployment_id": 3, "supersedes_deployment_id": 2})
+        statuses = [
+            (call.args[0], call.args[1]["state"])
+            for call in api.call_args_list
+            if len(call.args) == 2
+        ]
+        self.assertEqual(
+            statuses,
+            [
+                ("deployments/3/statuses", "success"),
+                ("deployments/2/statuses", "inactive"),
+                ("deployments/1/statuses", "inactive"),
+            ],
+        )
+
     def test_only_complete_semantic_release_tags_select_an_environment(self):
         self.assertEqual(delivery.classify("v1.2.3-rc.2"), ("1.2.3", "staging"))
         self.assertEqual(delivery.classify("v1.2.3"), ("1.2.3", "production"))
