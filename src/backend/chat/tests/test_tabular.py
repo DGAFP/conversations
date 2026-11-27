@@ -84,9 +84,7 @@ def test_comma_csv_reads_dot_decimals():
 def test_csv_delimiter_ignores_quoted_header_punctuation(delimiter, header):
     """Quoted commas and newlines do not hide the numeric amount column."""
     content = (
-        f'"{header}"{delimiter}Montant\n'
-        f'"Dupont, Jean"{delimiter}10\n'
-        f'"Durand, Anne"{delimiter}15\n'
+        f'"{header}"{delimiter}Montant\n"Dupont, Jean"{delimiter}10\n"Durand, Anne"{delimiter}15\n'
     ).encode()
     dataset = build_dataset([_csv(content, "data.csv")])
 
