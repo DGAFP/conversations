@@ -8,6 +8,8 @@ and this project adheres to
 
 ## Unreleased — Assistant RH
 
+- Deliver Kapsule releases through protected RC/stable tags, with digest-preserving
+  promotion, observed Flux/recipe proof and serialized recovery.
 - Update dnspython and Soup Sieve to clear the staging security scan.
 - Integrate upstream v0.0.29 and preserve RH streaming and source links.
 - Target main for upstream updates and record signed snapshot imports.
