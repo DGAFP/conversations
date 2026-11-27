@@ -4,6 +4,7 @@ run-name: Helmfile lint
 on:
   push:
     branches: [main, staging]
+    tags: ['v*']
   pull_request:
     branches:
       - 'main'

@@ -1,9 +1,12 @@
 """Exercise the delivery gate with synthetic GitHub run metadata; no network."""
-import importlib.util
-from pathlib import Path
-import unittest
 
-spec = importlib.util.spec_from_file_location("gate", Path(__file__).with_name("wait-required-checks.py"))
+import importlib.util
+import unittest
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location(
+    "gate", Path(__file__).with_name("wait-required-checks.py")
+)
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 SHA = "a" * 40
@@ -11,10 +14,19 @@ SHA = "a" * 40
 
 class DeliveryGateTest(unittest.TestCase):
     def runs(self):
-        return [dict(id=i, run_attempt=1, head_sha=SHA, head_branch=gate.BRANCH,
-                     event="push", path=".github/workflows/" + path,
-                     status="completed", conclusion="success")
-                for i, path in enumerate(gate.REQUIRED, start=1)]
+        return [
+            dict(
+                id=i,
+                run_attempt=1,
+                head_sha=SHA,
+                head_branch=gate.BRANCH,
+                event="push",
+                path=".github/workflows/" + path,
+                status="completed",
+                conclusion="success",
+            )
+            for i, path in enumerate(gate.REQUIRED, start=1)
+        ]
 
     def test_success(self):
         self.assertEqual(gate.evaluate(self.runs(), SHA), [])
@@ -23,12 +35,29 @@ class DeliveryGateTest(unittest.TestCase):
         self.assertEqual(gate.evaluate(self.runs()[1:], SHA), [gate.REQUIRED[0]])
 
     def test_other_revision_branch_event_and_path_are_not_proof(self):
-        for key, value in [("head_sha", "b" * 40), ("head_branch", "main"),
-                           ("event", "pull_request"), ("path", ".github/workflows/other.yml")]:
+        for key, value in [
+            ("head_sha", "b" * 40),
+            ("head_branch", "staging"),
+            ("event", "pull_request"),
+            ("path", ".github/workflows/other.yml"),
+        ]:
             with self.subTest(key=key):
                 runs = self.runs()
                 runs[0][key] = value
                 self.assertEqual(gate.evaluate(runs, SHA), [gate.REQUIRED[0]])
+
+    def test_integrated_hotfix_requires_its_exact_tag_push_revision(self):
+        runs = self.runs()
+        for run in runs:
+            run.update(
+                head_branch="v1.2.1-rc.1",
+                event="push",
+            )
+        self.assertEqual(gate.evaluate(runs, SHA, "v1.2.1-rc.1"), [])
+        runs[0].update(event="pull_request", pull_requests=[{"base": {"ref": "main"}}])
+        self.assertEqual(gate.evaluate(runs, SHA, "v1.2.1-rc.1"), [gate.REQUIRED[0]])
+        runs[0].update(event="push", head_branch="v1.2.1-rc.2")
+        self.assertEqual(gate.evaluate(runs, SHA, "v1.2.1-rc.1"), [gate.REQUIRED[0]])
 
     def test_pending_is_not_success(self):
         runs = self.runs()
