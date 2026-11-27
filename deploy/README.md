@@ -21,6 +21,8 @@ independent of upstream releases and the API repository.
    `workflow_run` starts `Tagged Conversations delivery`, whose privileged
    definition always comes from protected `main`. Failed runs, PRs, branch
    pushes and tags outside `main` ancestry cannot publish.
+   Backend, frontend/E2E, security and Helm also run on the tag; a PR's merged
+   test tree alone is not accepted as proof of the tagged source.
 3. GitHub scans both images, seals their digests and the source commit's
    environment values into an OCI Helm chart, then publishes to Scaleway.
    Flux watches the registry from inside Kubernetes; GitHub has no cluster key.
