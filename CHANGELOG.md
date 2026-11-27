@@ -11,6 +11,7 @@ and this project adheres to
 - Update dnspython and Soup Sieve to clear the staging security scan.
 - Integrate upstream v0.0.29 and preserve RH streaming and source links.
 - Target main for upstream updates and record signed snapshot imports.
+- Preserve quoted CSV headers and reject undefined reciprocal powers.
 
 - ✨(chat) add per-answer RH star ratings and detailed feedback.
 

@@ -303,12 +303,16 @@ def _decode(content: bytes) -> str:
 
 
 def _read_csv(content: bytes) -> tuple[list[list], tuple[str, ...]]:
-    """Read CSV rows, guessing the delimiter from the header line."""
+    """Read CSV rows, detecting separators outside quoted fields."""
     text = _decode(content)
-    header_line = text.split("\n", 1)[0]
-    delimiter = max(CSV_DELIMITERS, key=header_line.count)
-    if header_line.count(delimiter) == 0:
-        delimiter = ","
+    try:
+        delimiter = csv.Sniffer().sniff(text[:8192], delimiters="".join(CSV_DELIMITERS)).delimiter
+    except csv.Error:
+        # Uneven rows still load; compare parsed headers, including quoted newlines.
+        delimiter = max(
+            CSV_DELIMITERS,
+            key=lambda separator: len(next(csv.reader(io.StringIO(text), delimiter=separator), [])),
+        )
     rows = [
         [_normalize_cell(cell) for cell in row]
         for row in csv.reader(io.StringIO(text), delimiter=delimiter)

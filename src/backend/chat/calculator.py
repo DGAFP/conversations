@@ -77,6 +77,12 @@ def _sqrt(value: Decimal) -> Decimal:
     return value.sqrt()
 
 
+def _power(a: Decimal, b: Decimal) -> Decimal:
+    if a.is_zero() and b < 0:
+        raise decimal.DivisionByZero
+    return a**b
+
+
 # name -> (function, minimum arguments, maximum arguments or None)
 _FUNCTIONS = {
     "round": (_round, 1, 2),
@@ -94,7 +100,7 @@ _BINARY_OPERATORS = {
     ast.Div: operator.truediv,
     ast.FloorDiv: _floor_divide,
     ast.Mod: _modulo,
-    ast.Pow: operator.pow,
+    ast.Pow: _power,
 }
 
 
