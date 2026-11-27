@@ -16,7 +16,11 @@ from chat.models import ChatConversation, ChatStreamChunk
 from chat.tests.utils import stream_body
 from chat.vercel_ai_sdk.core import events_v4
 
-pytestmark = pytest.mark.django_db()
+# Async database writes use a separate connection that needs transactional cleanup.
+pytestmark = pytest.mark.django_db(transaction=True)
+
+# A provider error body echoing the input, which must never reach the logs.
+PROVIDER_BODY = "echoed secret document passage"
 
 
 class AsyncRaiseIterator:
@@ -180,6 +184,36 @@ async def test_stream_data_async_emits_model_connection_error_on_api_error():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "event", "status_code"),
+    [
+        (
+            ModelHTTPError(status_code=503, model_name="m", body=PROVIDER_BODY),
+            "llm_http_error",
+            503,
+        ),
+        (ModelAPIError(model_name="m", message=PROVIDER_BODY), "llm_connection_error", None),
+    ],
+)
+async def test_stream_data_async_logs_no_provider_message(error, event, status_code, json_logs):
+    """The error line names the failure by status (and type), never by its message."""
+    conversation = await sync_to_async(ChatConversationFactory)()
+    service = AIAgentService(conversation, user=conversation.owner)
+
+    def mock_run_agent(*args, **kwargs):
+        return AsyncRaiseIterator(error)
+
+    with patch.object(service, "_run_agent", side_effect=mock_run_agent):
+        _ = [result async for result in service.stream_data_async([])]
+
+    lines = json_logs()
+    [line] = [line for line in lines if line["event"] == event]
+    assert line["status_code"] == status_code
+    assert "error" not in line
+    assert PROVIDER_BODY not in str(lines)
+
+
+@pytest.mark.asyncio
 async def test_stream_data_async_emits_model_wrong_type_on_422():
     """422 ModelHTTPError emits model_wrong_type ErrorPart."""
     conversation = await sync_to_async(ChatConversationFactory)()
@@ -224,7 +258,7 @@ async def test_stream_data_async_conversation_deleted_during_failing_stream():
     service = AIAgentService(conversation, user=conversation.owner)
 
     async def mock_run_agent(*args, **kwargs):
-        service._pending_text = "partial answer"  # pylint: disable=protected-access
+        service._trail._pending_text = "partial answer"  # pylint: disable=protected-access
         await ChatConversation.objects.filter(pk=conversation.pk).adelete()
         raise ModelAPIError(model_name="test-model", message="Connection error.")
         yield  # pylint: disable=unreachable
@@ -240,7 +274,7 @@ async def _run_failing_turn(service, acreate):
     """Drive a turn that fails with text in hand, its chunk insert replaced."""
 
     async def mock_run_agent(*args, **kwargs):
-        service._pending_text = "partial answer"  # pylint: disable=protected-access
+        service._trail._pending_text = "partial answer"  # pylint: disable=protected-access
         raise ModelAPIError(model_name="test-model", message="Connection error.")
         yield  # pylint: disable=unreachable
 
@@ -252,7 +286,6 @@ async def _run_failing_turn(service, acreate):
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
 async def test_stream_data_async_conversation_deleted_between_check_and_insert():
     """A delete landing after the existence check still ends the stream cleanly."""
     conversation = await sync_to_async(ChatConversationFactory)()
@@ -270,7 +303,6 @@ async def test_stream_data_async_conversation_deleted_between_check_and_insert()
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
 async def test_stream_data_async_insert_failure_reraised_when_conversation_exists():
     """An insert failure is not swallowed while the conversation still exists."""
     conversation = await sync_to_async(ChatConversationFactory)()
@@ -281,7 +313,6 @@ async def test_stream_data_async_insert_failure_reraised_when_conversation_exist
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db(transaction=True)
 async def test_stream_data_async_conversation_deleted_while_trail_is_filed():
     """A delete landing after the flush, as the trail is filed, still ends cleanly."""
     conversation = await sync_to_async(ChatConversationFactory)()

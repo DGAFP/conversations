@@ -8,7 +8,7 @@ import pytest
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.exceptions import ModelHTTPError
 
-from chat.tools.exceptions import ModelCannotRetry
+from chat.tools.exceptions import ModelCannotRetry, UserContentModelRetry
 from chat.tools.utils import last_model_retry_soft_fail
 
 
@@ -134,9 +134,10 @@ async def test_last_model_retry_soft_fail_returns_message_when_max_retries_reach
     # Exhausted retries are logged as an error naming the cause, never its content
     error = caplog.records[-1]
     assert error.levelno == logging.ERROR
-    assert error.getMessage() == (
-        "Max retries reached for tool 'failing_tool' (cause: ModelHTTPError, status: 400)."
-    )
+    assert error.msg["event"] == "tool_max_retries_reached"
+    assert error.msg["tool_name"] == "failing_tool"
+    assert error.msg["cause"] == "ModelHTTPError"
+    assert error.msg["status_code"] == 400
     assert "My secret prompt" not in caplog.text
     assert result == (
         "Please retry with different parameters. "
@@ -192,5 +193,41 @@ async def test_last_model_retry_soft_fail_does_not_log_run_context(caplog):
     with caplog.at_level(logging.WARNING), pytest.raises(ModelRetry):
         await failing_tool(MockContext())
 
-    assert "Tool 'failing_tool' raised ModelRetry: Please retry." in caplog.text
+    [retry] = [record.msg for record in caplog.records]
+    assert retry["event"] == "tool_retry_requested"
+    assert retry["tool_name"] == "failing_tool"
+    assert retry["reason"] == "Please retry."
     assert "My secret prompt" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_last_model_retry_soft_fail_does_not_log_user_content_reasons(caplog):
+    """A retry message carrying user content reaches the model but not the logs."""
+
+    @last_model_retry_soft_fail
+    async def failing_tool(_ctx: RunContext) -> str:
+        """Tool whose retry message echoes the user's file."""
+        raise UserContentModelRetry("Unknown column salaire_secret.")
+
+    class MockContext:
+        """Fake context on its first try, then on its last."""
+
+        max_retries = 3
+        retries = {}
+        tool_name = "failing_tool"
+
+    ctx = MockContext()
+    with caplog.at_level(logging.WARNING), pytest.raises(UserContentModelRetry):
+        await failing_tool(ctx)
+    ctx.retries = {"failing_tool": 2}
+    with caplog.at_level(logging.WARNING):
+        result = await failing_tool(ctx)
+
+    assert result.startswith("Unknown column salaire_secret.")
+    assert [record.msg["event"] for record in caplog.records] == [
+        "tool_retry_requested",
+        "tool_retry_requested",
+        "tool_max_retries_reached",
+    ]
+    assert caplog.records[0].msg["reason"] is None
+    assert "salaire_secret" not in caplog.text

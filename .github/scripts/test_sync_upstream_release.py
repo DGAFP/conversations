@@ -73,18 +73,41 @@ class ReleaseSelectionTests(unittest.TestCase):
     def test_integrated_release_accepts_only_git_ancestry_results(self, git):
         git.side_effect = [completed(0), completed(1), completed(128, stderr="bad tag")]
 
-        self.assertTrue(sync.is_release_integrated("v0.0.1"))
-        git.assert_called_with(
-            "merge-base", "--is-ancestor", "v0.0.1^{commit}", "origin/staging", check=False
-        )
-        self.assertFalse(sync.is_release_integrated("v0.0.2"))
-        with self.assertRaisesRegex(RuntimeError, "bad tag"):
-            sync.is_release_integrated("v0.0.3")
+        with patch("sync_upstream_release.IMPORTED_RELEASE") as imported:
+            imported.exists.return_value = False
+            self.assertTrue(sync.is_release_integrated("v0.0.1"))
+            git.assert_called_with(
+                "merge-base", "--is-ancestor", "refs/upstream/tags/v0.0.1^{commit}", "origin/main", check=False
+            )
+            self.assertFalse(sync.is_release_integrated("v0.0.2"))
+            with self.assertRaisesRegex(RuntimeError, "bad tag"):
+                sync.is_release_integrated("v0.0.3")
+
+    @patch("sync_upstream_release.IMPORTED_RELEASE")
+    @patch("sync_upstream_release.git")
+    def test_signed_snapshot_covers_only_its_verified_upstream_ancestors(self, git, imported):
+        commit = "a" * 40
+        imported.read_text.return_value = '{"tag": "v0.0.29", "commit": "' + commit + '"}'
+        for ancestor, expected in ((0, True), (1, False)):
+            with self.subTest(ancestor=ancestor):
+                git.side_effect = [completed(1), completed(stdout=commit), completed(ancestor)]
+                self.assertEqual(sync.is_release_integrated("v0.0.28"), expected)
+                git.assert_called_with(
+                    "merge-base", "--is-ancestor", "refs/upstream/tags/v0.0.28^{commit}", commit, check=False
+                )
+
+    @patch("sync_upstream_release.IMPORTED_RELEASE")
+    @patch("sync_upstream_release.git")
+    def test_snapshot_with_a_mismatched_tag_fails_closed(self, git, imported):
+        imported.read_text.return_value = '{"tag": "v0.0.29", "commit": "' + "a" * 40 + '"}'
+        git.side_effect = [completed(1), completed(stdout="b" * 40)]
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            sync.is_release_integrated("v0.0.29")
 
 
 class MainTests(unittest.TestCase):
     @patch("sync_upstream_release.gh_paginated")
-    def test_staging_draft_for_manual_upgrade_blocks_duplicate(self, paginated):
+    def test_main_draft_for_manual_upgrade_blocks_duplicate(self, paginated):
         paginated.return_value = [
             {"head": {"ref": "feat/assistant-rh-scaleway-tem"}},
             {"head": {"ref": "chore/upstream-v0.0.29-rh-integration"}, "draft": True},
@@ -95,7 +118,7 @@ class MainTests(unittest.TestCase):
             "chore/upstream-v0.0.29-rh-integration",
         )
         paginated.assert_called_once_with(
-            "repos/DGAFP/conversations/pulls?state=open&base=staging&per_page=100"
+            "repos/DGAFP/conversations/pulls?state=open&base=main&per_page=100"
         )
 
     @patch("sync_upstream_release.gh_paginated")
@@ -111,7 +134,7 @@ class MainTests(unittest.TestCase):
     @patch("sync_upstream_release.git")
     @patch(
         "sync_upstream_release.find_open_sync_pull_request",
-        return_value="upstream-release/staging/v0.0.25",
+        return_value="upstream-release/main/v0.0.25",
     )
     def test_open_sync_pr_prevents_all_git_and_release_work(
         self, find_open, git, list_releases
@@ -156,24 +179,24 @@ class MainTests(unittest.TestCase):
 
         self.assertEqual(sync.main(), 0)
 
-        git.assert_any_call("fetch", "--tags", "upstream", "main")
-        git.assert_any_call("fetch", "origin", "staging")
+        git.assert_any_call("fetch", "--no-tags", "upstream", "refs/tags/*:refs/upstream/tags/*")
+        git.assert_any_call("fetch", "origin", "main")
         git.assert_any_call(
-            "ls-remote", "--exit-code", "--heads", "origin", "upstream-release/staging/v0.0.25",
+            "ls-remote", "--exit-code", "--heads", "origin", "upstream-release/main/v0.0.25",
             check=False,
         )
         git.assert_any_call(
-            "switch", "-c", "upstream-release/staging/v0.0.25", "origin/staging"
+            "switch", "-c", "upstream-release/main/v0.0.25", "origin/main"
         )
         git.assert_any_call(
-            "push", "--set-upstream", "origin", "upstream-release/staging/v0.0.25"
+            "push", "--set-upstream", "origin", "upstream-release/main/v0.0.25"
         )
         arguments = gh.call_args.args
         self.assertEqual(arguments[:2], ("pr", "create"))
-        self.assertEqual(arguments[arguments.index("--base") + 1], "staging")
+        self.assertEqual(arguments[arguments.index("--base") + 1], "main")
         self.assertIn("chore: merge upstream release v0.0.25", arguments)
         self.assertNotIn("chore: merge upstream release v0.0.25 (conflicts)", arguments)
-        self.assertIn("upstream-release/staging/v0.0.25", arguments)
+        self.assertIn("upstream-release/main/v0.0.25", arguments)
 
     @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
     @patch("sync_upstream_release.gh")
@@ -202,13 +225,13 @@ class MainTests(unittest.TestCase):
         self.assertEqual(sync.main(), 0)
 
         git.assert_any_call("merge", "--abort")
-        git.assert_any_call("reset", "--hard", "v0.0.25^{commit}")
+        git.assert_any_call("reset", "--hard", "refs/upstream/tags/v0.0.25^{commit}")
         arguments = gh.call_args.args
         self.assertIn("chore: merge upstream release v0.0.25 (conflicts)", arguments)
         body = arguments[arguments.index("--body") + 1]
         self.assertIn("- `app.py`", body)
         self.assertIn("- `package.json`", body)
-        self.assertIn("git merge origin/staging", body)
+        self.assertIn("git merge origin/main", body)
 
     @patch.dict(os.environ, {"GITHUB_REPOSITORY": "DGAFP/conversations"})
     @patch("sync_upstream_release.gh")
@@ -256,8 +279,8 @@ class MainTests(unittest.TestCase):
         git.assert_any_call(
             "fetch",
             "origin",
-            "refs/heads/upstream-release/staging/v0.0.25:"
-            "refs/remotes/origin/upstream-release/staging/v0.0.25",
+            "refs/heads/upstream-release/main/v0.0.25:"
+            "refs/remotes/origin/upstream-release/main/v0.0.25",
         )
         self.assertFalse(
             any(call.args and call.args[0] == "push" for call in git.call_args_list)

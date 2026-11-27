@@ -199,6 +199,8 @@ const getStreamingToolLabel = (
       return t('Summarizing...');
     case 'generate_presentation':
       return t('Generating the slides...');
+    case 'calculate':
+      return t('Calculating...');
     default:
       return t('Search...');
   }
@@ -588,7 +590,9 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                 </Box>
               )}
             {toolInvocationParts.map((part, partIndex) =>
-              isLastAssistantMessage ? (
+              // Charts stay visible in older messages; other tool states only
+              // matter for the message being generated.
+              isLastAssistantMessage || getToolName(part) === 'query_table' ? (
                 <ToolInvocationItem
                   key={`tool-invocation-${partIndex}`}
                   toolInvocation={part}
